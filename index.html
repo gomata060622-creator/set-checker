@@ -55,6 +55,8 @@ button:focus-visible, .btn:focus-within { outline: 3px solid var(--accent); }
 .meta .sample { color: var(--miss-fg); font-weight: 700; }
 .filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .filebtn { position: relative; font-size: 12px; padding: 4px 10px; }
+.backbtn { padding: 10px 10px; font-size: 14px; font-weight: 700; color: var(--accent); border-color: var(--accent); }
+.backbtn[aria-disabled="true"] { opacity: .35; }
 .btns { display: inline-flex; gap: 6px; flex-wrap: nowrap; align-items: center; }
 .btns .filebtn, .btns .purchbtn { padding: 4px 8px; }
 
@@ -206,6 +208,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 
 <div class="bar wrap">
   <form id="f" class="bar-row" autocomplete="off">
+    <button type="button" id="backBtn" class="backbtn" aria-label="1つ前の画面に戻る">← 戻る</button>
     <input id="q" type="search" enterkeyhint="search" placeholder="バーコードを読む／書名・セット名" aria-label="バーコードか書名で探す">
     <button type="submit" class="btn-primary">探す</button>
   </form>
@@ -496,7 +499,6 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
       estProfit.p = pTxt; amzProfit.p = pTxt;
     }
     let h = "";
-    if (lastList && !(fromScan && lastList.list.length === 1)) h += '<div><button id="back">← 一覧にもどる</button></div>';
     h += '<section class="head"><h1>' + esc(s.t || "（セット名なし）") + "</h1>";
     h += '<div class="note num">' + esc(s.cat || "") + "　" + esc(s.s) + " " + esc(s.col) + "列" + (s.a ? "　ASIN " + esc(s.a) : "") + "</div>";
     if (auLine(s)) h += '<div class="au big">' + auLine(s) + "</div>";
@@ -892,7 +894,6 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     const todo = todoAll.filter((e) => !e.kari);   // Excelに書き込むのは金額が決まったものだけ
     const waitIds = lastExport.filter((id) => todo.some((e) => e.id === id));
     let h = "";
-    if (DATA && curView) h += '<div><button id="pBack">← もどる</button></div>';
     // 金額が仮のもの：ここで金額を入れていく
     h += '<section class="karibox"><h2 class="num"><span>金額が仮の本：' + karis.length + "冊</span>" +
       '<span class="kariset">仮の金額 <input id="kariIn" type="text" inputmode="numeric" value="' + kariP + '" aria-label="仮の金額">円</span></h2>';
@@ -1182,6 +1183,55 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     (k.notes || []).forEach((n) => { h += '<div class="kn"><span class="d num">' + esc(n[0]) + " " + esc(n[1]) + "</span>" + esc(n[2]) + "</div>"; });
     return h + "</div>";
   }
+
+  // ================= ブラウザのように「戻る」 =================
+  // 画面が変わるたびに履歴に積む。「← 戻る」ボタンとAndroidの戻る操作で1つずつさかのぼる
+  const navStates = [];
+  let navPos = 0, navQuiet = false;
+  const navKey = (v, ll) => v.type + "|" + (v.type === "list" ? (ll ? ll.q : "") : v.type === "set" ? v.si : "");
+  function navBtn() { $("backBtn").setAttribute("aria-disabled", navPos > 0 ? "false" : "true"); }
+  function navRecord() {
+    const st = { v: Object.assign({}, curView), ll: lastList, y: 0 };
+    const cur = navStates[navPos];
+    if (navQuiet || !cur || navKey(cur.v, cur.ll) === navKey(st.v, st.ll)) {
+      if (cur) st.y = cur.y;
+      navStates[navPos] = st;
+      try { history.replaceState({ n: navPos }, ""); } catch (e) {}
+    } else {
+      navPos++;
+      navStates.length = navPos;
+      navStates.push(st);
+      try { history.pushState({ n: navPos }, ""); } catch (e) {}
+    }
+    navBtn();
+  }
+  window.addEventListener("scroll", () => { const st = navStates[navPos]; if (st) st.y = window.scrollY; }, { passive: true });
+  const _home = showHome, _list = showList, _set = showSet, _purch = showPurch, _rerender = rerender;
+  showHome = function () { const r = _home.apply(this, arguments); navRecord(); return r; };
+  showList = function () { const r = _list.apply(this, arguments); navRecord(); return r; };
+  showSet = function () { const r = _set.apply(this, arguments); navRecord(); return r; };
+  showPurch = function () { const r = _purch.apply(this, arguments); navRecord(); return r; };
+  rerender = function () { const was = navQuiet; navQuiet = true; try { return _rerender.apply(this, arguments); } finally { navQuiet = was; } };
+  window.addEventListener("popstate", (e) => {
+    // 値段を入れる画面が開いていたら、まずそれを閉じる
+    if (!sheet.hidden) { closeEditor(); try { history.pushState({ n: navPos }, ""); } catch (x) {} return; }
+    const n = e.state && typeof e.state.n === "number" ? e.state.n : 0;
+    const st = navStates[n];
+    navPos = st ? n : 0;
+    navQuiet = true;
+    try {
+      if (!st) { showHome(); return; }
+      lastList = st.ll;
+      const v = st.v;
+      if (v.type === "list" && lastList) showList(v.intro);
+      else if (v.type === "set") showSet(v.si, v.vi, v.fromScan, false);
+      else if (v.type === "purch") showPurch(false);
+      else showHome();
+      const y = st.y || 0;
+      setTimeout(() => window.scrollTo(0, y), 0);
+    } finally { navQuiet = false; navBtn(); }
+  });
+  $("backBtn").addEventListener("click", () => { if (!sheet.hidden) { closeEditor(); return; } if (navPos > 0) history.back(); });
 
   // 起動：このスマホに保存したデータ → なければ見本
   updatePurchBtn();
