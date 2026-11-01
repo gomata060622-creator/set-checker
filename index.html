@@ -1,0 +1,1188 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>セット本チェッカー</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#4f81bd">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 店の棚の前で片手で使う道具：上に検索の帯、下にセットの一覧と各巻の表。数字は等幅でそろえる */
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --fg: #1d2530;
+  --muted: #5d6877;
+  --line: #d6dde5;
+  --accent: #4f81bd;          /* セットデータの水色（自分で入れる仕入価格の列） */
+  --accent-soft: #e3ecf7;
+  --grey: #767676;            /* グレーの列（Keepaの最新価格） */
+  --miss: #fde9e4;            /* 足りない巻 */
+  --miss-fg: #b4351d;
+  --hit: #fff4c2;             /* 読み取った巻 */
+  --bought: #ebf1de;          /* スマホで記入した仕入れ（セットデータのA38から下と同じ薄い緑） */
+  --bought-fg: #1d2530;
+  --good: #1f7a4d;
+  --bad: #c0392b;
+  --font: "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161c; --panel: #1b2129; --fg: #e6ebf1; --muted: #9aa6b4; --line: #2e3742;
+    --accent: #7ea7da; --accent-soft: #1f2d3f; --grey: #a7adb5; --miss: #3a2320; --miss-fg: #ff9a85;
+    --hit: #3b3416; --good: #5fd39a; --bad: #ff7b6b; --bought: #2b3a1f; --bought-fg: #e6ebf1; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161c; --panel: #1b2129; --fg: #e6ebf1; --muted: #9aa6b4; --line: #2e3742;
+  --accent: #7ea7da; --accent-soft: #1f2d3f; --grey: #a7adb5; --miss: #3a2320; --miss-fg: #ff9a85;
+  --hit: #3b3416; --good: #5fd39a; --bad: #ff7b6b; --bought: #2b3a1f; --bought-fg: #e6ebf1; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--panel); }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* 検索の帯 */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line); padding-block: 10px; }
+.bar-row { display: flex; gap: 8px; align-items: center; }
+.bar input[type="search"] { flex: 1; min-width: 0; font: inherit; font-size: 17px; padding: 10px 12px; border: 2px solid var(--accent); border-radius: 8px; background: var(--bg); color: var(--fg); }
+.bar input[type="search"]:focus { outline: 3px solid var(--accent-soft); }
+button, .btn { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 8px; padding: 9px 12px; cursor: pointer; white-space: nowrap; }
+button:focus-visible, .btn:focus-within { outline: 3px solid var(--accent); }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.meta .sample { color: var(--miss-fg); font-weight: 700; }
+.filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.filebtn { position: relative; font-size: 12px; padding: 4px 10px; }
+.btns { display: inline-flex; gap: 6px; flex-wrap: nowrap; align-items: center; }
+.btns .filebtn, .btns .purchbtn { padding: 4px 8px; }
+
+main { padding-block: 12px 40px; display: flex; flex-direction: column; gap: 12px; }
+.note { font-size: 13px; color: var(--muted); }
+.status { font-size: 14px; color: var(--muted); }
+
+/* 結果の一覧 */
+.list { display: flex; flex-direction: column; gap: 8px; }
+.item { display: block; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; white-space: normal; }
+.item:hover { border-color: var(--accent); }
+.item .t { font-weight: 700; font-size: 15px; }
+.item .sub { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.item .hitvol { margin-top: 4px; font-size: 13px; background: var(--hit); border-radius: 4px; padding: 2px 6px; display: inline-block; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { font-size: 12px; border-radius: 999px; padding: 2px 9px; border: 1px solid var(--line); }
+.chip.full { color: var(--good); border-color: var(--good); }
+.chip.part { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.chip .lim { font-weight: 700; color: var(--fg); }
+.chip .lim.minus { color: var(--bad); }
+.chip .avg { color: var(--grey); }
+
+/* セットの詳しい表示 */
+.head { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.head h1 { font-size: 17px; margin: 0; text-wrap: balance; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px 10px; }
+.fact { display: flex; flex-direction: column; }
+.fact .k { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.fact .v { font-size: 16px; font-weight: 700; }
+.fact .v.minus { color: var(--bad); }
+.toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.tablebox { overflow: auto; max-height: calc(100dvh - 110px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overscroll-behavior: contain; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 6px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th { font-size: 11px; color: var(--muted); font-weight: 400; position: sticky; top: 0; z-index: 2; background: var(--panel); }
+/* 巻と書名は横にスライドしても動かない（Excelのウィンドウ枠の固定と同じ） */
+th.fx1, td.vn { position: sticky; left: 0; z-index: 1; background: var(--panel); min-width: 2.2em; }
+th.fx2, td.vt { position: sticky; left: 2.2em; z-index: 1; background: var(--panel); box-shadow: 2px 0 0 var(--line); }
+th.fx1, th.fx2 { z-index: 3; }
+tr.hit td.vn, tr.hit td.vt { background: var(--hit); }
+td.own.out { color: var(--line); background: transparent; }
+.tablebox::-webkit-scrollbar { height: 14px; width: 10px; }
+.tablebox::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 7px; border: 3px solid var(--panel); }
+.tablebox::-webkit-scrollbar-track { background: var(--accent-soft); }
+/* 横のスライドバー（表の上。動かすと表が左右に動く。スマホでも出る） */
+.hbar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); padding: 2px 2px 6px; }
+.hbar input[type=range] { flex: 1; min-width: 0; height: 28px; accent-color: var(--accent); }
+.hbar .hl { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* 値段を入れているマス：黄色く光らせる */
+td.own.editing { background: #ffe14d !important; color: #1d2530 !important; outline: 3px solid var(--accent); outline-offset: -3px; }
+@media (prefers-reduced-motion: no-preference) { td.own.editing { animation: edblink 1s ease-in-out infinite alternate; } }
+@keyframes edblink { from { background: #ffe14d; } to { background: #fff6c4; } }
+.au { font-size: 12px; color: var(--fg); margin-top: 2px; }
+.chip .nd { color: var(--fg); font-weight: 700; }
+.au.big { font-size: 15px; font-weight: 700; }
+td.vt .va { display: block; color: var(--accent); font-size: 10px; }
+.quick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.quick button { font-size: 15px; padding: 8px 0; font-weight: 700; color: var(--accent); border-color: var(--accent); }
+td.vn { text-align: center; color: var(--muted); }
+td.vt { text-align: left; white-space: normal; min-width: 6em; max-width: 8.5em; font-size: 12px; }
+td.vt .j { display: block; color: var(--muted); font-size: 10px; }
+td.g { color: var(--grey); }
+td.ref { color: var(--fg); }
+td.aim { font-weight: 700; color: var(--accent); }
+td.aim.minus { color: var(--bad); }
+td.past { color: var(--muted); font-size: 12px; }
+td.own { color: var(--accent); border-left: 1px solid var(--line); }
+td.own.miss { background: var(--miss); color: var(--miss-fg); font-weight: 700; min-width: 2.6em; }
+tr.hit td { background: var(--hit); }
+tr.hit td.own.miss { background: var(--miss); }
+th.own { border-left: 1px solid var(--line); color: var(--accent); }
+.legend { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.legend b { font-weight: 700; }
+.empty { background: var(--panel); border: 1px dashed var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+td.own.tap { cursor: pointer; }
+td.own.bought { background: var(--bought); color: var(--bought-fg); font-weight: 700; }
+td.own .mark { font-size: 9px; font-weight: 400; color: var(--miss-fg); margin-left: 2px; vertical-align: top; }
+.purchbtn { font-size: 12px; padding: 4px 10px; }
+.purchbtn b { color: var(--miss-fg); }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--panel); border-top: 2px solid var(--accent); box-shadow: 0 -6px 24px rgba(0,0,0,.18);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; }
+.sheet .st { font-weight: 700; font-size: 14px; }
+.sheet .sv { font-size: 13px; color: var(--muted); }
+.sheet .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sheet input { font: inherit; font-size: 22px; width: 8em; min-width: 0; padding: 8px 10px; border: 2px solid var(--accent); border-radius: 8px; background: var(--bg); color: var(--fg); text-align: right; }
+.sheet .err { color: var(--bad); font-size: 13px; }
+.btn-danger { color: var(--bad); border-color: var(--bad); }
+.day { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.day h2 { margin: 0; font-size: 14px; padding: 8px 12px; background: var(--accent-soft); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.prow { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--line); cursor: pointer; }
+.prow:first-of-type { border-top: 0; }
+.prow .pt { font-size: 13px; font-weight: 700; min-width: 0; }
+.prow .pv { font-size: 12px; color: var(--muted); grid-column: 1; min-width: 0; }
+.prow .pp { font-weight: 700; text-align: right; }
+.pill { font-size: 11px; border-radius: 999px; padding: 1px 8px; border: 1px solid var(--line); white-space: nowrap; }
+.pill.todo { color: var(--miss-fg); border-color: var(--miss-fg); }
+.pill.done { color: var(--good); border-color: var(--good); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.verdict { font-size: 17px; font-weight: 700; padding: 8px 10px; border-radius: 8px; background: var(--hit); display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.verdict .ok { color: var(--accent); }
+.verdict .ng { color: var(--bad); }
+.verdict .own { color: var(--muted); font-weight: 400; font-size: 14px; }
+.multi { background: var(--hit); border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+.vs-have { color: var(--muted); }
+.vs-miss { color: var(--miss-fg); font-weight: 700; }
+.kh { border-top: 1px dashed var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.kh .kt { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.kh .kg { font-size: 20px; font-weight: 700; }
+.g1 { color: var(--good); } .g3 { color: var(--bad); }
+.kh .tag { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.kh .tag.warn { color: var(--miss-fg); border-color: var(--miss-fg); }
+.kh .kn { color: var(--fg); }
+.kh .kn .d { color: var(--muted); font-size: 11px; margin-right: 6px; }
+.kk { display: inline-block; font-size: 10px; color: #fff; background: var(--miss-fg); border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; }
+.chip.kchip { color: var(--fg); }
+.hist { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.hist h2 { margin: 0; font-size: 14px; padding: 8px 12px; background: var(--accent-soft); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.hrow { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; border-top: 1px solid var(--line); padding: 4px 6px 4px 12px; }
+.hrow:first-of-type { border-top: 0; }
+.hrow .go { text-align: left; background: none; border: 0; padding: 6px 0; white-space: normal; min-width: 0; }
+.hrow .go .t { font-weight: 700; font-size: 14px; display: block; }
+.hrow .go .sub { font-size: 12px; color: var(--muted); display: block; }
+.hrow .go.gone { opacity: .5; cursor: default; }
+.hrow .x { padding: 4px 10px; color: var(--muted); font-size: 13px; }
+.hcnt { color: var(--accent); font-weight: 700; }
+td.own.kari { background: #fff1d6; color: #8a5a00; font-weight: 700; }
+td.own .mark.k { color: #8a5a00; font-weight: 700; }
+.kchip2 { color: #8a5a00; font-weight: 700; }
+.pill.kari { color: #8a5a00; border-color: #8a5a00; }
+.karibox { background: #fff1d6; border: 1px solid #e6c88a; border-radius: 10px; overflow: hidden; }
+.karibox h2 { margin: 0; font-size: 14px; padding: 8px 12px; color: #6b4600; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.krow { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; padding: 8px 12px; border-top: 1px solid #e6c88a; background: var(--panel); }
+.krow .pt { font-size: 13px; font-weight: 700; min-width: 0; }
+.krow .pv { font-size: 12px; color: var(--muted); grid-column: 1 / -1; }
+.krow form { display: flex; gap: 6px; align-items: center; grid-column: 1 / -1; }
+.krow input { font: inherit; font-size: 18px; width: 6em; padding: 6px 8px; border: 2px solid var(--accent); border-radius: 8px; background: var(--bg); color: var(--fg); text-align: right; }
+.kariset { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.kariset input { font: inherit; width: 5em; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); text-align: right; }
+.quick button.karibtn { color: #fff; background: var(--bad); border-color: var(--bad); }
+.discsel { display: flex; gap: 4px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.discsel button { font-size: 13px; padding: 4px 10px; }
+.purchbtn.dcon { background: var(--good); border-color: var(--good); color: #fff; font-weight: 700; }
+.discsel button.on { background: var(--good); border-color: var(--good); color: #fff; font-weight: 700; }
+td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; margin-left: 2px; vertical-align: top; }
+.callout { background: var(--accent-soft); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+@media (prefers-reduced-motion: no-preference) { .item { transition: border-color .15s; } }
+</style>
+
+<div class="bar wrap">
+  <form id="f" class="bar-row" autocomplete="off">
+    <input id="q" type="search" enterkeyhint="search" placeholder="バーコードを読む／書名・セット名" aria-label="バーコードか書名で探す">
+    <button type="submit" class="btn-primary">探す</button>
+  </form>
+  <div class="meta">
+    <span id="dataInfo">データを読み込んでいます…</span>
+    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="homeBtn" class="purchbtn" type="button">トップ</button></span>
+  </div>
+</div>
+
+<main class="wrap" id="main"></main>
+<div id="sheet" class="sheet" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+  // 見本（データを読み込むまで表示する）
+  const SAMPLE = {"v":1,"made":"見本","sample":true,"sets":[{"s":"文庫新書単行本DVD児童書絵本","t":"つげ義春コレクション 全9冊セット (ちくま文庫)","a":"4480425403","cat":"文庫","p":6934,"n":9,"avg":464,"pr":-3414,"rk":23961,"memo":"260×380","col":"I","vol":[["ねじ式/夜が掴む","9784480425416",829,708],["大場電気鍍金工業所/やもり","9784480425423",658,537],["李さん一家/海辺の叙景","9784480425430",1000,777],["近所の景色/無能の人","9784480425447",1656,542],["紅い花/やなぎ屋主人","9784480425454",740,967],["苦節十年記/旅籠の思い出","9784480425461",1139,1080],["四つの犯罪/七つの墓場","9784480425478",589,955],["腹話術師/ねずみ","9784480425485",930,1002],["鬼面石/一刀両断","9784480425492",1051,1067]],"own":[{"a":"","c":"K","p":6934,"n":9,"f7":470,"f9":1284,"dc":-487,"x":[340,523,484,432,484,755,572,572,709]},{"a":"4480425403","c":"M","x":[null,null,null,null,null,null,null,null,null]},{"a":"4480425403","c":"N","x":[null,null,null,null,null,null,null,null,null]}],"sold":[{"d":"2026/02/17","p":7980,"x":[267,387,605,605,605,770,715,715,770]}]},{"s":"文庫新書単行本DVD児童書絵本","t":"新潮文庫 十二国記セット","a":"B00DCQ0GCG","cat":"文庫","p":8632,"n":15,"avg":375,"pr":-5159,"rk":652446,"memo":"260×380","col":"EY","vol":[["","9784101240510",1069,484],["","9784101240527",626,269],["","9784101240534",709,302],["","9784101240541",816,300],["","9784101240558",736,415],["","9784101240565",843,463],["","9784101240572",961,400],["","9784101240589",646,240],["","9784101240596",807,599],["","9784101240602",920,657],["","9784101240619",892,680],["","9784101240626",675,220],["","9784101240633",550,150],["","9784101240640",667,238],["","9784101240657",880,359]],"own":[{"a":"","c":"FA","x":[176,176,176,150,278,176,176,176,450,492,470,220,176,176,176]},{"a":"B081CPKQSJ","c":"FI","x":[480,176,285,300,298,273,298,176,176,640,480,176,176,176,242]},{"a":"","c":"FJ","x":[298,88,176,176,364,176,350,220,220,176,550,176,176,176,242]},{"a":"","c":"FK","x":[280,176,260,220,298,380,410,176,430,500,610,176,176,176,242]},{"a":"B081CPKQSJ","c":"FR","x":[550,330,194,396,550,550,550,194,550,470,470,194,194,341,396]},{"a":"B081CPKQSJ","c":"FS","p":8632,"n":15,"f7":430,"f9":1564,"dc":null,"x":[null,null,194,null,null,null,null,194,null,null,null,194,null,null,null]},{"a":"B081CPKQSJ","c":"FT","x":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]}],"sold":[{"d":"2026/09/02","p":9142,"x":[375,349,194,220,560,498,540,220,579,326,194,106,194,194,194]},{"d":"2026/08/12","p":9142,"x":[440,220,330,220,550,550,560,220,550,470,470,220,275,470,550]},{"d":"2026/07/22","p":6076,"x":[220,110,220,220,361,584,220,220,470,220,220,220,220,399,295]}]}]};
+
+  const $ = (id) => document.getElementById(id);
+  const main = $("main"), q = $("q"), info = $("dataInfo");
+  let DATA = null, codeIdx = null, textIdx = null, lastList = null, showFull = false, setIdx = null;
+  let curView = { type: "home" };
+  try { showFull = localStorage.getItem("sc_full") === "1"; } catch (e) {}
+
+  // ---------- 文字のそろえ方 ----------
+  const kata = (s) => s.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));
+  const norm = (s) => kata(String(s || "").normalize("NFKC").toLowerCase()).replace(/[\s・･\-‐―ー〜~_.,，、。()（）［］\[\]「」『』【】!！?？:：\/]/g, "");
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const yen = (n) => (n == null || isNaN(n) ? "" : Math.round(n).toLocaleString("ja-JP"));
+  function isbn10to13(a) {
+    const core = "978" + a.slice(0, 9);
+    let s = 0;
+    for (let i = 0; i < 12; i++) s += +core[i] * (i % 2 ? 3 : 1);
+    return core + ((10 - (s % 10)) % 10);
+  }
+
+  // ---------- 索引 ----------
+  function buildIndex(data) {
+    codeIdx = new Map();
+    textIdx = [];
+    setIdx = new Map();
+    data.sets.forEach((s, si) => {
+      setIdx.set(s.s + "|" + s.col, si);
+      const add = (k, vi) => {
+        if (!k) return;
+        if (!codeIdx.has(k)) codeIdx.set(k, []);
+        codeIdx.get(k).push([si, vi]);
+      };
+      add(String(s.a || "").toUpperCase(), -1);
+      // 集めている列の2行目のASIN（グレーの列と違うASINのこともある）でも探せるように
+      (s.own || []).forEach((o) => { const a = String(o.a || "").toUpperCase(); if (a && a !== String(s.a || "").toUpperCase()) add(a, -1); });
+      s.vol.forEach((v, vi) => { add(v[1], vi); });
+      const au = auOf(s);
+      textIdx.push({ si, t: norm(s.t) + (au ? "|" + norm(au.p) + "|" + norm(au.a) : ""), v: s.vol.map((v) => norm(v[0])) });
+    });
+  }
+
+  // ---------- 保存（このスマホの中） ----------
+  function idb() {
+    return new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open("setcheck", 1);
+        r.onupgradeneeded = () => r.result.createObjectStore("data");
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    });
+  }
+  async function saveData(obj) {
+    try {
+      const db = await idb();
+      await new Promise((res, rej) => { const tx = db.transaction("data", "readwrite"); tx.objectStore("data").put(obj, "main"); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+      return true;
+    } catch (e) { return false; }
+  }
+  async function loadData() {
+    try {
+      const db = await idb();
+      return await new Promise((res) => { const tx = db.transaction("data", "readonly"); const g = tx.objectStore("data").get("main"); g.onsuccess = () => res(g.result || null); g.onerror = () => res(null); });
+    } catch (e) { return null; }
+  }
+
+  // データが7日以上前なら知らせる（書き出しを忘れると、もう買った巻が「なし」のまま出るため）
+  function oldNote(made) {
+    const m = String(made || "").match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+    if (!m) return "";
+    const days = Math.floor((Date.now() - new Date(+m[1], +m[2] - 1, +m[3]).getTime()) / 86400000);
+    return days >= 7 ? '　<span class="sample">' + days + "日前のデータです。セットデータで書き出し直してください</span>" : "";
+  }
+
+  // その巻を、そろっていない列ごとに持っているか（Excelの値か、スマホの記入があれば持っている）
+  function volStatus(s, vi) {
+    return ownStats(s).filter((x) => !x.full && vi < x.n).map((x) => {
+      const o = s.own[x.i], v = o.x[vi];
+      const have = (v != null && v !== "") || !!entryAt(s, o, vi + 1);
+      return { i: x.i, have };
+    });
+  }
+  const volStatusText = (st) => st.map((x) => '<span class="' + (x.have ? "vs-have" : "vs-miss") + '">' + circled(x.i) + (x.have ? "持っている" : "なし") + "</span>").join("・");
+
+  function useData(obj) {
+    DATA = obj;
+    buildIndex(obj);
+    const nv = obj.sets.reduce((a, s) => a + s.vol.length, 0);
+    info.innerHTML = obj.sample
+      ? '<span class="sample">見本のデータです</span>　セットデータから書き出したファイルを読み込んでください'
+      : "データ：" + esc(obj.made) + "　<span class=\"num\">" + obj.sets.length.toLocaleString() + "</span>セット・<span class=\"num\">" + nv.toLocaleString() + "</span>巻" + oldNote(obj.made);
+  }
+
+  // ---------- 探す ----------
+  function search(raw) {
+    const s = String(raw || "").trim();
+    if (!s || !DATA) return showHome();
+    const digits = s.normalize("NFKC").replace(/[^0-9Xx]/g, "").toUpperCase();
+    let hits = [];
+    let byCode = false;
+    if (/^[0-9X]+$/.test(s.normalize("NFKC").replace(/[\s-]/g, "").toUpperCase()) && (digits.length === 13 || digits.length === 10)) {
+      byCode = true;
+      const keys = [digits];
+      if (digits.length === 10 && /^\d{9}[\dX]$/.test(digits)) keys.push(isbn10to13(digits));
+      keys.forEach((k) => (codeIdx.get(k) || []).forEach((h) => hits.push(h)));
+    } else if (/^[0-9A-Z]{10}$/i.test(s)) {
+      byCode = true;
+      (codeIdx.get(s.toUpperCase()) || []).forEach((h) => hits.push(h));
+    }
+    if (!byCode) {
+      const n = norm(s);
+      if (!n) return showHome();
+      textIdx.forEach((x) => {
+        if (x.t.includes(n)) { hits.push([x.si, -1]); return; }
+        const vi = x.v.findIndex((t) => t && t.includes(n));
+        if (vi >= 0) hits.push([x.si, vi]);
+      });
+    }
+    // 同じセットは1つに
+    const seen = new Map();
+    hits.forEach(([si, vi]) => { if (!seen.has(si) || (seen.get(si) < 0 && vi >= 0)) seen.set(si, vi); });
+    const list = [...seen.entries()];
+    lastList = { q: s, list, byCode };
+    if (byCode && list.length === 1) return showSet(list[0][0], list[0][1], true);
+    showList();
+  }
+
+  function ownStats(s) {
+    return s.own.map((o, i) => {
+      // その列の巻数（列ごとの5行目）。巻数が少ない列は、その巻までそろえば「そろっている」
+      const n = Math.min(o.n > 0 ? o.n : s.vol.length, s.vol.length);
+      const xs = o.x.slice(0, n);
+      const have = xs.filter((v) => v != null && v !== "").length;
+      return { i, have, n, full: have >= n, miss: xs.map((v, vi) => (v == null || v === "" ? vi + 1 : 0)).filter(Boolean) };
+    });
+  }
+
+  // 集めている列ごとの計算（Excelの6行目と同じ式）
+  //   途中：(販売価格 − 手数料2つ − 利益1,000円 − 今の合計) ÷ 残りの冊数 ＝ 残り1冊いくらまで
+  //   そろった：今の合計 ÷ 巻数 ＝ 1冊の平均
+  //   今の合計＝持っている巻の値段＋スマホで記入した値段（まだExcelに入っていないものも）＋割引の行
+  function colCalc(s, oi) {
+    const o = s.own[oi];
+    const n = Math.min(o.n > 0 ? o.n : s.vol.length, s.vol.length);
+    let have = 0, total = 0, kari = 0;
+    const miss = [];
+    for (let i = 0; i < n; i++) {
+      const v = o.x[i];
+      if (typeof v === "number") { have++; total += v; }
+      else if (v != null && v !== "") { have++; }
+      else {
+        const e = entryAt(s, o, i + 1);
+        if (e) { have++; total += netP(e); if (e.kari) kari++; } else miss.push(i + 1);
+      }
+    }
+    if (typeof o.dc === "number") total += o.dc;
+    const tot = total > 0 ? total : 0;
+    if (!miss.length) return { done: true, have, n, miss, kari, avg: tot > 0 ? Math.floor(tot / n) : null };
+    const ok = typeof o.p === "number" && typeof o.f7 === "number" && typeof o.f9 === "number";
+    const rem = ok ? o.p - o.f7 - o.f9 - 1000 - tot : null;   // 残りの巻に使っていいお金
+    return { done: false, have, n, miss, kari, rem, lim: ok ? Math.floor(rem / miss.length) : null };
+  }
+
+  function chipsHtml(s) {
+    const st = ownStats(s);
+    if (!st.length) return '<span class="chip">集めている列なし</span>';
+    const full = st.filter((x) => x.full);
+    const part = st.filter((x) => !x.full);
+    let h = "";
+    if (full.length) {
+      const avgs = full.map((x) => { const c = colCalc(s, x.i); return c.avg != null ? circled(x.i) + yen(c.avg) : null; }).filter(Boolean);
+      const sent = full.filter((x) => s.own[x.i].nd);
+      const nd = sent.length ? '　<span class="nd">納品済み ' + sent.length + "（" + sent.map((x) => esc(String(s.own[x.i].nd).replace(/^納品\s*/, ""))).join("・") + "）・手元 " + (full.length - sent.length) + "</span>" : "";
+      h += '<span class="chip full num">そろっている ' + full.length + nd + (avgs.length ? '　<span class="avg">1冊平均 ' + avgs.join("・") + "円</span>" : "") + "</span>";
+    }
+    part.forEach((x) => {
+      const c = colCalc(s, x.i);
+      let tail = "";
+      if (c.done) tail = '　記入でそろう' + (c.avg != null ? '　<span class="avg">1冊平均 ' + yen(c.avg) + "円</span>" : "");
+      else {
+        if (c.miss.length <= 6) tail += "　足りない " + c.miss.join("・");
+        if (c.lim != null) tail += '　<span class="lim' + (c.lim < 0 ? " minus" : "") + '">1冊 ' + yen(c.lim) + "円まで</span>";
+      }
+      if (c.kari) tail += '　<span class="kchip2">仮の金額 ' + c.kari + "冊を含む</span>";
+      h += '<span class="chip part num">' + circled(x.i) + " " + c.have + "/" + c.n + tail + "</span>";
+    });
+    return h;
+  }
+  const circled = (i) => (i < 20 ? String.fromCharCode(0x2460 + i) : "(" + (i + 1) + ")");
+
+  function showList(intro) {
+    curView = { type: "list", intro };
+    const { q: s, list, byCode } = lastList;
+    let h = intro || ('<div class="status">「' + esc(s) + "」" + (list.length ? "：" + list.length + "セット" : "：見つかりませんでした") + "</div>");
+    if (!intro && byCode && list.length > 1) h += '<div class="multi">この本は <b>' + list.length + "つのセット</b>に入っています。どのセットで「なし」になっているか見て選んでください。</div>";
+    if (!list.length) {
+      h += '<div class="empty"><div>' + (byCode ? "このバーコードの本は、セットデータにありません。" : "この言葉が入ったセット・書名はありません。") + '</div><div class="note">書名の一部（例：「十二国記」）で探すこともできます。</div></div>';
+    }
+    h += '<div class="list">';
+    list.slice(0, 80).forEach(([si, vi]) => {
+      const st = DATA.sets[si];
+      h += '<button class="item" data-si="' + si + '" data-vi="' + vi + '"><div class="t">' + esc(st.t || "（セット名なし）") + '</div>' +
+        '<div class="sub num"><span>' + esc(st.cat || "") + "</span><span>" + esc(st.s) + " " + esc(st.col) + "列</span><span>" + st.vol.length + "巻</span>" +
+        (st.p != null ? "<span>販売 " + yen(st.p) + "円</span>" : "") + "</div>" +
+        (auLine(st) ? '<div class="au">' + auLine(st) + "</div>" : "") +
+        (vi >= 0 ? '<div class="hitvol">' + (vi + 1) + "巻目：" + esc(st.vol[vi][0] || st.vol[vi][1]) + (function () { const vs = volStatus(st, vi); return vs.length ? "　" + volStatusText(vs) : "　そろっている"; })() + "</div>" : "") +
+        '<div class="chips">' + (khOf(st) ? '<span class="chip kchip">小部屋 <b class="' + khGradeCls(khOf(st).g) + '">' + esc(khOf(st).g || "―") + "</b></span>" : "") + chipsHtml(st) + "</div></button>";
+    });
+    if (list.length > 80) h += '<div class="note">ほかに ' + (list.length - 80) + "セットあります。言葉を足して絞ってください。</div>";
+    h += "</div>";
+    main.innerHTML = h;
+    main.querySelectorAll(".item").forEach((b) => b.addEventListener("click", () => showSet(+b.dataset.si, +b.dataset.vi, false)));
+    window.scrollTo(0, 0);
+    refocus();
+  }
+
+
+  function showSet(si, vi, fromScan, keepScroll) {
+    curView = { type: "set", si, vi, fromScan };
+    const scrollY = edPos ? edPos.y : window.scrollY;
+    const s = DATA.sets[si];
+    if (!keepScroll) recordView(s);
+    const st = ownStats(s);
+    const cols = st.filter((x) => !x.full);
+    // 過去に買えた値段：売れた列（新しい順）のあとに、揃えた列（右から）。合わせて3列
+    const past = s.sold.map((x) => ({ h: esc(x.d.slice(5)) + "<br>仕入", x: x.x }));
+    st.filter((x) => x.full).slice().reverse().forEach((x) => past.push({ h: "揃え済<br>" + circled(x.i), x: s.own[x.i].x }));
+    past.splice(3);
+    // 目安：一番左のそろっていない列で、残りのお金を足りない巻に最新の値段の比で分ける
+    //   （集めている列がない・販売価格などがない列は、今までどおり 平均仕入価格×巻数 を全部の巻に分ける）
+    let aimOf = () => null, aimCol = null, estProfit = null, amzProfit = null;
+    const baseC = cols.length ? colCalc(s, cols[0].i) : null;
+    if (baseC && baseC.rem != null) {
+      aimCol = cols[0].i;
+      const missSet = new Set(baseC.miss);
+      const msum = baseC.miss.reduce((a, vn) => { const lp = s.vol[vn - 1] && s.vol[vn - 1][2]; return a + (lp > 0 ? lp : 0); }, 0);
+      aimOf = (i) => {
+        if (!missSet.has(i + 1)) return null;
+        const lp = s.vol[i][2];
+        if (msum > 0 && lp > 0) return Math.round((baseC.rem * lp) / msum / 10) * 10;
+        return baseC.lim;   // 最新の値段がない巻は、平均
+      };
+    } else {
+      const gsum = s.vol.reduce((a, v) => a + (v[2] > 0 ? v[2] : 0), 0);
+      const budget = s.avg != null && s.avg > 0 ? s.avg * s.vol.length : null;
+      aimOf = (i) => { const v = s.vol[i]; return budget != null && gsum > 0 && v[2] > 0 ? Math.round((budget * v[2]) / gsum / 10) * 10 : null; };
+    }
+    const fact = (k, v, cls) => '<div class="fact"><span class="k">' + k + '</span><span class="v num ' + (cls || "") + '">' + v + "</span></div>";
+
+    // ⑥をそろえたら：残りの巻を、過去に買った値段（売れた列とそろった列の、その巻の値段の平均）で買ったときの利益
+    //   過去の値段がない巻は目安で計算する
+    if (aimCol != null && baseC && baseC.rem != null) {
+      const pastCols = s.sold.map((x) => x.x).concat(st.filter((x) => x.full).map((x) => s.own[x.i].x));
+      let spend = 0, noPast = 0;
+      baseC.miss.forEach((vn) => {
+        const vals = pastCols.map((x) => x[vn - 1]).filter((v) => typeof v === "number" && v > 0);
+        if (vals.length) spend += vals.reduce((a, b) => a + b, 0) / vals.length;
+        else { noPast++; const a = aimOf(vn - 1); spend += a != null ? a : 0; }
+      });
+      estProfit = { v: Math.floor(baseC.rem + 1000 - spend), noPast };
+      // 残りの巻を、Amazonの最新価格（グレーの列）で買ったときの利益。最新の値段がない巻は目安で計算する
+      let spend2 = 0, noLatest = 0;
+      baseC.miss.forEach((vn) => {
+        const lp = s.vol[vn - 1] && s.vol[vn - 1][2];
+        if (typeof lp === "number" && lp > 0) spend2 += lp;
+        else { noLatest++; const a = aimOf(vn - 1); spend2 += a != null ? a : 0; }
+      });
+      amzProfit = { v: Math.floor(baseC.rem + 1000 - spend2), noLatest };
+      // 計算に使った販売価格（その列の4行目。グレーの列とASINが違うと、上の販売価格と違うことがある）
+      const bo = s.own[aimCol];
+      const pTxt = typeof bo.p === "number" ? '<span class="k">（販売 ' + yen(bo.p) + "円" + (bo.a && String(bo.a).toUpperCase() !== String(s.a || "").toUpperCase() ? "・ASIN " + esc(bo.a) : "") + "）</span>" : "";
+      estProfit.p = pTxt; amzProfit.p = pTxt;
+    }
+    let h = "";
+    if (lastList && !(fromScan && lastList.list.length === 1)) h += '<div><button id="back">← 一覧にもどる</button></div>';
+    h += '<section class="head"><h1>' + esc(s.t || "（セット名なし）") + "</h1>";
+    h += '<div class="note num">' + esc(s.cat || "") + "　" + esc(s.s) + " " + esc(s.col) + "列" + (s.a ? "　ASIN " + esc(s.a) : "") + "</div>";
+    if (auLine(s)) h += '<div class="au big">' + auLine(s) + "</div>";
+    // 読み取った巻の答え
+    if (vi >= 0 && vi < s.vol.length) {
+      const vs = volStatus(s, vi);
+      let vh = '<div class="verdict num" id="verdict"><span>' + (vi + 1) + "巻：</span>";
+      if (!vs.length) vh += '<span class="own">集めている列は全部そろっている</span>';
+      else {
+        const base = vs[0];
+        if (!base.have) {
+          const a = aimOf(vi);
+          if (a == null) vh += '<span class="ok">' + circled(base.i) + "にない</span>";
+          else if (a < 0) vh += '<span class="ng">' + circled(base.i) + "にない／もう利益1,000円は出ない（目安 " + yen(a) + "円）</span>";
+          else vh += '<span class="ok">' + circled(base.i) + "にない　目安 " + yen(a) + "円まで</span>";
+        } else {
+          const next = vs.find((x) => !x.have);
+          vh += '<span class="ng">' + circled(base.i) + "はもう持っている</span>";
+          if (next) vh += '<span class="ok">' + circled(next.i) + "にはない</span>";
+        }
+        if (vs.length > 1) vh += '<span class="own">' + volStatusText(vs) + "</span>";
+        if (baseC && baseC.kari) vh += '<span class="own kchip2">（仮の金額 ' + baseC.kari + "冊を含む）</span>";
+      }
+      h += vh + "</div>";
+    }
+    h += '<div class="facts">' +
+      fact("販売価格", s.p != null ? yen(s.p) + "円" : "―") +
+      fact("全巻数", (s.n != null ? s.n : s.vol.length) + "巻") +
+      fact("平均仕入価格", s.avg != null ? yen(s.avg) + "円" : "―", s.avg < 0 ? "minus" : "") +
+      fact("利益（Amazonで全部買ったら）", s.pr != null ? yen(s.pr) + "円" : "―", s.pr < 0 ? "minus" : "") +
+      (estProfit ? fact(circled(aimCol) + "をそろえたら（過去の値段で）", yen(estProfit.v) + "円" + estProfit.p + (estProfit.noPast ? '<span class="k">（' + estProfit.noPast + "冊は目安で計算）</span>" : ""), estProfit.v < 0 ? "minus" : "") : "") +
+      (amzProfit ? fact(circled(aimCol) + "をそろえたら（Amazonの最新で）", yen(amzProfit.v) + "円" + amzProfit.p + (amzProfit.noLatest ? '<span class="k">（' + amzProfit.noLatest + "冊は目安で計算）</span>" : ""), amzProfit.v < 0 ? "minus" : "") : "") +
+      fact("販売スピード", s.rk != null ? yen(s.rk) : "―") +
+      "</div>";
+    h += '<div class="chips">' + chipsHtml(s) + "</div>";
+    h += khHtml(s);
+    h += "</section>";
+
+    // 表
+    h += '<div class="hbar" id="hbar" hidden><span>←</span><input id="hrange" type="range" min="0" max="1000" value="0" aria-label="表を横に動かす"><span>→</span><span class="hl" id="hlab"></span></div>';
+    h += '<div class="tablebox" id="tbox"><table class="num"><thead><tr><th class="fx1">巻</th><th class="fx2" style="text-align:left">書名</th><th>最新</th><th>参考</th><th>目安' + (aimCol != null ? "<br>" + circled(aimCol) : "") + '</th>';
+    cols.forEach((x) => { h += '<th class="own">' + circled(x.i) + "</th>"; });
+    past.forEach((x, k) => { h += '<th' + (k === 0 ? ' class="own"' : "") + ">" + x.h + "</th>"; });
+    h += "</tr></thead><tbody>";
+    s.vol.forEach((v, i) => {
+      const aim = aimOf(i);
+      h += '<tr' + (i === vi ? ' class="hit" id="hitrow"' : "") + '><td class="vn">' + (i + 1) + '</td><td class="vt">' + esc(v[0] || "") + (khOf(s) && (khOf(s).kk || []).includes(i + 1) ? '<span class="kk">カカリ</span>' : "") + '<span class="j">' + esc(v[1] || "") + "</span>" + (function () { const a = auOf(s); return a && a.va && a.va[i] ? '<span class="va">' + esc(a.va[i]) + "</span>" : ""; })() + "</td>" +
+        '<td class="g">' + yen(v[2]) + '</td><td class="ref">' + yen(v[3]) + '</td><td class="aim' + (aim != null && aim < 0 ? " minus" : "") + '">' + yen(aim) + "</td>";
+      cols.forEach((x) => {
+        const o = s.own[x.i];
+        if (i >= x.n) { h += '<td class="own out">―</td>'; return; }   // この列は、この巻がなかったころのセット
+        const val = o.x[i];
+        const miss = val == null || val === "";
+        const ent = miss ? entryAt(s, o, i + 1) : null;
+        if (ent) {
+          h += '<td class="own bought tap' + (ent.kari ? " kari" : "") + '" data-oi="' + x.i + '" data-v="' + (i + 1) + '">' + yen(ent.p) + (ent.dc > 0 ? '<span class="mark dc">-' + pctTxt(ent.dc) + "</span>" : "") + (ent.kari ? '<span class="mark k">仮</span>' : ent.done ? "" : '<span class="mark">未</span>') + "</td>";
+        } else if (miss) {
+          h += '<td class="own miss tap" data-oi="' + x.i + '" data-v="' + (i + 1) + '" aria-label="なし"></td>';
+        } else {
+          h += '<td class="own">' + esc(typeof val === "number" ? yen(val) : val) + "</td>";
+        }
+      });
+      past.forEach((x, k) => { const pv = x.x[i]; h += '<td class="past"' + (k === 0 ? ' style="border-left:1px solid var(--line)"' : "") + ">" + (typeof pv === "number" ? yen(pv) : esc(pv == null ? "" : pv)) + "</td>"; });
+      h += "</tr>";
+    });
+    h += "</tbody></table></div>";
+    h += '<div class="legend"><span><b>最新</b>：グレーの列（Keepa）</span><span><b>参考</b>：参考価格の列</span><span><b>目安</b>：一番左のそろっていない列（見出しの丸数字）で、残りのお金（販売価格−手数料−利益1,000円−もう使ったお金）を、足りない巻に最新の値段の比で分けたもの。この値段までで買えば利益1,000円が残る（持っている巻・記入した巻は空欄）</span><span><b>①②…</b>：集めている列（なし＝まだ持っていない。押すと買った値段を記入できます。<span style=\"background:var(--bought);padding:0 4px\">緑</span>＝記入した巻、未＝まだExcelに入っていない、<span style=\"background:#fff1d6;color:#8a5a00;padding:0 4px\">仮</span>＝金額をあとで入れる本。仮の金額で計算している。<span style=\"color:var(--good)\">-20%</span>＝割引の日に買った本。値段は値札のまま、計算は割引後）</span><span><b>仕入・揃え済</b>：売れたセットと揃えたセットで買った値段（新しいほうから3つ）</span><span><b>1冊○円まで</b>：残りの巻をこの値段までで買えば、利益1,000円が残る（Excelの6行目と同じ。スマホで記入した巻も入れて計算。<span style=\"color:var(--bad)\">赤のマイナス</span>＝もう利益1,000円は取れない）</span><span><b style=\"color:var(--grey)\">1冊平均</b>：そろった列の、割引を引いた後の1冊の平均</span></div>';
+    main.innerHTML = h;
+    const back = $("back");
+    if (back) back.addEventListener("click", () => showList(lastList.intro));
+    setupHbar(keepScroll);
+    main.querySelectorAll("td.own.tap").forEach((td) => td.addEventListener("click", () => openEditor(si, +td.dataset.oi, +td.dataset.v)));
+    const hr = $("hitrow");
+    if (keepScroll) window.scrollTo(0, scrollY);
+    else if (hr && !$("verdict")) hr.scrollIntoView({ block: "center" }); else window.scrollTo(0, 0);
+    if (!keepScroll) refocus();
+  }
+
+  // 横のスライドバーと表をつなぐ。今見えている一番左の列（①②…）を横に出す
+  let hLeft = 0, hTop = 0;
+  // 値段を入れる画面を開いたときの位置。保存・閉じたあとに同じ場所へもどす（キーボードの出し入れで飛ばないように）
+  let edPos = null;
+  function setupHbar(keep) {
+    const box = $("tbox"), bar = $("hbar"), rg = $("hrange"), lab = $("hlab");
+    if (!box || !bar) return;
+    const heads = [...box.querySelectorAll("thead th")];
+    const fixW = () => (heads[0] ? heads[0].offsetWidth : 0) + (heads[1] ? heads[1].offsetWidth : 0);
+    const max = () => box.scrollWidth - box.clientWidth;
+    const label = () => {
+      const x = box.scrollLeft + fixW() + 4;
+      const th = heads.slice(2).find((t) => t.offsetLeft + t.offsetWidth / 2 > x);
+      lab.textContent = th ? th.innerText.replace(/\s+/g, " ") + " から" : "";
+    };
+    const sync = () => { const m = max(); rg.value = m > 0 ? Math.round((box.scrollLeft / m) * 1000) : 0; hLeft = box.scrollLeft; hTop = box.scrollTop; label(); };
+    bar.hidden = max() <= 2;
+    if (keep) { const L = edPos ? edPos.l : hLeft, T = edPos ? edPos.t : hTop; box.scrollLeft = L; box.scrollTop = T; hLeft = L; hTop = T; }
+    else { hLeft = 0; hTop = 0; }
+    rg.addEventListener("input", () => { box.scrollLeft = (rg.value / 1000) * max(); });
+    box.addEventListener("scroll", sync, { passive: true });
+    sync();
+  }
+
+  function showHome() {
+    curView = { type: "home" };
+    lastList = null;
+    let h = "";
+    if (DATA && DATA.sample) {
+      h += '<div class="empty"><b>はじめに</b><div>セットデータの「スマホ用に書き出す」でできたファイル（セットデータ_スマホ用.json）を、上の「データを読み込む」から選んでください。このスマホの中に保存されるので、次からは電波がなくても探せます。</div><div class="note">今は見本のデータが入っています。試しに「十二国記」と入れるか、下のセットを押してみてください。</div></div>';
+      lastList = { q: "見本", list: DATA.sets.map((_, i) => [i, -1]), byCode: false, intro: h };
+      showList(h);
+      return;
+    }
+    h += '<div class="empty"><b>バーコードを読むか、書名・セット名を入れてください</b><div class="note">読み取るとすぐ探します。ISBN（10けた）やASINでも探せます。</div></div>';
+    h += histHtml();
+    main.innerHTML = h;
+    bindHist();
+    refocus();
+  }
+
+  // ================= 見たセットの履歴（スマホとパソコンで共有） =================
+  const hist = new Map();   // id → { id, s, gc, t, n（開いた回数）, at（最後に開いた日時） }
+  try { (JSON.parse(localStorage.getItem("sc_hist") || "[]") || []).forEach((x) => { if (x && x.id) hist.set(x.id, x); }); } catch (e) {}
+  const saveHistLocal = () => { try { localStorage.setItem("sc_hist", JSON.stringify([...hist.values()])); } catch (e) {} };
+  const histId = (sh, gc) => { const k = sh + "|" + gc; let x = 5381; for (let i = 0; i < k.length; i++) x = ((x * 33) ^ k.charCodeAt(i)) >>> 0; return "h" + x.toString(36) + "_" + gc; };
+  let histConfirm = false;
+  function histPut(d) {
+    if (!API) return;
+    queueOp({ c: "history", op: "set", id: d.id, data: { s: d.s, gc: d.gc, t: d.t, n: d.n, at: d.at } });
+  }
+  function recordView(s) {
+    if (!DATA || DATA.sample) return;
+    const id = histId(s.s, s.col), old = hist.get(id);
+    const d = { id, s: s.s, gc: s.col, t: s.t || "", n: (old && old.n ? old.n : 0) + 1, at: new Date().toISOString() };
+    hist.set(id, d);
+    saveHistLocal();
+    histPut(d);
+  }
+  function delHist(id) {
+    hist.delete(id);
+    saveHistLocal();
+    if (!API) return;
+    queueOp({ c: "history", op: "delete", id });
+  }
+  const hDate = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+  function histRows(list, withCount) {
+    return list.map((x) => {
+      const si = setIdx ? setIdx.get(x.s + "|" + x.gc) : undefined;
+      return '<div class="hrow"><button class="go' + (si == null ? " gone" : "") + '" data-si="' + (si == null ? "" : si) + '"><span class="t">' + esc(x.t || "（セット名なし）") + '</span><span class="sub num">' +
+        (withCount ? '<span class="hcnt">' + x.n + "回</span>　" : "") + esc(hDate(x.at)) + "　" + esc(x.s) + " " + esc(x.gc) + "列" + (si == null ? "　（今のデータにない）" : "") + "</span></button>" +
+        '<button class="x" data-id="' + esc(x.id) + '" aria-label="履歴から消す">×</button></div>';
+    }).join("");
+  }
+  function histHtml() {
+    const all = [...hist.values()];
+    if (!all.length) return "";
+    const recent = all.slice().sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 50);
+    const often = all.slice().sort((a, b) => (b.n - a.n) || (a.at < b.at ? 1 : -1)).slice(0, 20);
+    return '<section class="hist"><h2><span>最近見たセット</span></h2>' + histRows(recent, false) + "</section>" +
+      '<section class="hist"><h2><span>よく見るセット</span></h2>' + histRows(often, true) + "</section>" +
+      '<div class="actions"><button id="hClear">' + (histConfirm ? "本当に全部消す（" + all.length + "件）" : "履歴を全部消す") + "</button>" + (histConfirm ? '<button id="hNo">やめる</button>' : "") + "</div>";
+  }
+  function bindHist() {
+    main.querySelectorAll(".hrow .go").forEach((b) => b.addEventListener("click", () => { if (b.dataset.si !== "") showSet(+b.dataset.si, -1, false); }));
+    main.querySelectorAll(".hrow .x").forEach((b) => b.addEventListener("click", () => { delHist(b.dataset.id); showHome(); }));
+    const hc = $("hClear");
+    if (hc) hc.addEventListener("click", () => {
+      if (!histConfirm) { histConfirm = true; showHome(); return; }
+      histConfirm = false;
+      [...hist.keys()].forEach(delHist);
+      showHome();
+    });
+    const hn = $("hNo");
+    if (hn) hn.addEventListener("click", () => { histConfirm = false; showHome(); });
+  }
+
+
+  // ================= 仕入れの記入 =================
+  // 記入はGoogleの保存場所（Apps Script）に送る。電波がないときは、このスマホにためて、電波が入ったら送る
+  let API = null, KEY = null;
+  try {
+    const hp = new URLSearchParams(location.hash.slice(1));
+    if (hp.get("u") && hp.get("k")) {
+      localStorage.setItem("sc_api", JSON.stringify({ u: hp.get("u"), k: hp.get("k") }));
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+    const c = JSON.parse(localStorage.getItem("sc_api") || "null");
+    if (c && c.u && c.k) { API = c.u; KEY = c.k; }
+  } catch (e) {}
+  let syncOk = null, syncAt = null;   // 最後に保存場所とやりとりできたか
+  const server = new Map();          // id → 記入（保存場所にあるもの）
+  let pending = [];                  // まだ保存場所に送れていない変更 [{c, op, id, data}]
+  try { pending = JSON.parse(localStorage.getItem("sc_pending") || "[]") || []; } catch (e) { pending = []; }
+  const savePending = () => { try { localStorage.setItem("sc_pending", JSON.stringify(pending)); } catch (e) {} };
+  // 保存場所が使えなくても、この端末の中には残す
+  const localOnly = new Map();
+  try { (JSON.parse(localStorage.getItem("sc_local") || "[]") || []).forEach((e) => localOnly.set(e.id, e)); } catch (e) {}
+  const saveLocal = () => { try { localStorage.setItem("sc_local", JSON.stringify([...localOnly.values()])); } catch (e) {} };
+
+  function allEntries() {
+    const m = new Map(server);
+    localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
+    pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
+    return [...m.values()].filter((e) => e && e.id);
+  }
+  const cellKey = (sh, gc, oc, v) => sh + "|" + gc + "|" + oc + "|" + v;
+  // マスごとの記入（一番新しいもの）。記入が変わったら作り直す
+  let entCache = null;
+  function entryIndex() {
+    if (entCache) return entCache;
+    const m = new Map();
+    allEntries().forEach((e) => { const k = cellKey(e.s, e.gc, e.oc, e.v); const b = m.get(k); if (!b || e.at > b.at) m.set(k, e); });
+    entCache = m;
+    return m;
+  }
+  function entryAt(s, o, v) {
+    if (!o.c) return null;
+    return entryIndex().get(cellKey(s.s, s.col, o.c, v)) || null;
+  }
+  const newId = () => "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const today = () => { const d = new Date(); return d.getFullYear() + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0"); };
+
+  async function api(body) {
+    const r = await fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(Object.assign({ k: KEY }, body)), cache: "no-store", redirect: "follow" });
+    if (!r.ok) throw new Error("http " + r.status);
+    const j = await r.json();
+    if (!j || j.ok !== true) throw new Error((j && j.error) || "ng");
+    return j;
+  }
+  function queueOp(op) {
+    // 同じものへの変更は最後の1つだけ送ればよい
+    pending = pending.filter((p) => !((p.c || "purchases") === op.c && p.id === op.id));
+    pending.push(op);
+    savePending();
+    flush();
+  }
+  let flushing = false;
+  async function flush() {
+    if (!API || !pending.length || flushing) return;
+    flushing = true;
+    const ops = pending.slice();
+    try {
+      await api({ a: "push", ops: ops.map((o) => ({ c: o.c || "purchases", op: o.op, id: o.id, data: o.data })) });
+      pending = pending.filter((p) => !ops.includes(p));
+      ops.forEach((o) => { if ((o.c || "purchases") === "purchases") { if (o.op === "set") server.set(o.id, o.data); else server.delete(o.id); } });
+      savePending();
+      entCache = null;
+      syncOk = true; syncAt = new Date();
+    } catch (e) {
+      syncOk = false;   // 電波がないなど。あとで送り直す
+    }
+    flushing = false;
+    updatePurchBtn();
+    if (pending.length && syncOk) flush();
+  }
+  function change(op) {
+    entCache = null;
+    if (op.op === "set") localOnly.set(op.id, op.data); else localOnly.delete(op.id);
+    saveLocal();
+    updatePurchBtn();
+    rerender();
+    if (API) queueOp(Object.assign({ c: "purchases" }, op));
+  }
+  function rerender() {
+    if (curView.type === "set") showSet(curView.si, curView.vi, curView.fromScan, true);
+    else if (curView.type === "purch") showPurch(true);
+    else if (curView.type === "list" && lastList) { const y = window.scrollY; showList(curView.intro); window.scrollTo(0, y); }
+    else if (curView.type === "home" && DATA && !DATA.sample) showHome();
+  }
+  function updatePurchBtn() {
+    const all = allEntries().filter((e) => !e.done);
+    const n = all.length, k = all.filter((e) => e.kari).length;
+    $("purchBtn").innerHTML = "仕入れ一覧" + (n ? "（未反映 <b>" + n + "</b>" + (k ? "・仮 <b>" + k + "</b>" : "") + "）" : "");
+  }
+
+  // ---------- 値段を入れる画面 ----------
+  const sheet = $("sheet");
+  // よく買う値段：132円・242円はいつも出し、ほかは記入した回数の多い順（この端末に残す）
+  let priceCnt = {};
+  try { priceCnt = JSON.parse(localStorage.getItem("sc_prices") || "{}") || {}; } catch (e) { priceCnt = {}; }
+  const notePrice = (p) => { priceCnt[p] = (priceCnt[p] || 0) + 1; try { localStorage.setItem("sc_prices", JSON.stringify(priceCnt)); } catch (e) {} };
+  // 仮の金額：店で値段を入れずに登録するときの金額。安めにすると「いくらまで」が甘くなるので、高めにしておく
+  let kariP = 330;
+  try { const k = parseInt(localStorage.getItem("sc_kariP") || "", 10); if (k > 0) kariP = k; } catch (e) {}
+  const saveKariP = (k) => { kariP = k; try { localStorage.setItem("sc_kariP", String(k)); } catch (e) {} };
+  // 今日の割引（店のセール）：その日のうちはずっと同じ。次の日はなしにもどる
+  let discR = 0;
+  try { const d = JSON.parse(localStorage.getItem("sc_disc") || "null"); if (d && d.d === today() && d.r > 0) discR = d.r; } catch (e) {}
+  const saveDisc = (r) => { discR = r; try { localStorage.setItem("sc_disc", JSON.stringify({ d: today(), r })); } catch (e) {} };
+  const pctTxt = (r) => Math.round(r * 100) + "%";
+  const netP = (e) => (e && e.dc > 0 ? Math.floor((e.p || 0) * (1 - e.dc)) : (e ? e.p || 0 : 0));   // 割引後の値段
+  // 上の「割引」ボタン：押すたびに なし→10%→15%→20%→なし
+  const DC_STEPS = [0, 0.1, 0.15, 0.2];
+  function updateDiscBtn() {
+    const b = $("discBtn");
+    b.textContent = discR > 0 ? "割引" + pctTxt(discR) : "割引なし";
+    b.classList.toggle("dcon", discR > 0);
+  }
+  $("discBtn").addEventListener("click", () => {
+    const i = DC_STEPS.findIndex((r) => Math.abs(r - discR) < 0.001);
+    saveDisc(DC_STEPS[(i + 1) % DC_STEPS.length]);
+    updateDiscBtn();
+  });
+  updateDiscBtn();
+  function quickPrices() {
+    // セットデータの「店舗」の色の値段で多かった順の14個（2026/10/30に数えた。88円・106円はけこさんがいらないので外す）。1段目の左端は「仮」
+    return [100, 110, 132, 176, 220, 242, 308, 330, 385, 396, 440, 484, 495, 550];
+  }
+  function openEditor(si, oi, v) {
+    edPos = { y: window.scrollY, l: hLeft, t: hTop };
+    const s = DATA.sets[si], o = s.own[oi], vol = s.vol[v - 1];
+    if (!o.c) {
+      sheet.innerHTML = '<div class="st">このデータでは記入できません</div><div class="sv">セットデータの「スマホ用に書き出す」をもう一度してから、データを読み込み直してください。</div><div class="row"><button id="edClose">閉じる</button></div>';
+      sheet.hidden = false;
+      $("edClose").addEventListener("click", closeEditor);
+      return;
+    }
+    const ent = entryAt(s, o, v);
+    sheet.innerHTML =
+      '<div class="st">' + esc(s.t || "（セット名なし）") + "</div>" +
+      '<div class="sv num">' + circled(oi) + "の列（" + esc(o.c) + "列）　" + v + "巻" + (vol && vol[0] ? "　" + esc(vol[0]) : "") + (ent ? "　記入：" + esc(ent.d) + (ent.kari ? "（金額は仮 " + yen(ent.p) + "円）" : ent.done ? "（反映済み）" : "") : "") + (discR > 0 && !(ent && !ent.kari) ? '　<span class="dctag" style="font-size:12px">割引' + pctTxt(discR) + "</span>" : "") + "</div>" +
+      '<div class="quick" aria-label="押すとその値段で保存（値札の値段）">' +
+        (ent && !ent.kari ? "" : '<button type="button" id="edKari" class="karibtn num" aria-label="金額はあとで入れる（仮の金額で登録）">仮 ' + yen(kariP) + "</button>") +
+        quickPrices().map((p) => '<button type="button" class="num" data-qp="' + p + '">' + yen(p) + "</button>").join("") + '</div>' +
+      '<form id="edForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="値段" value="' + (ent && !ent.kari ? ent.p : "") + '" aria-label="買った値段"><span>円</span>' +
+      '<button type="submit" class="btn-primary">保存</button>' + (ent ? '<button type="button" id="edDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
+      '<div id="edErr" class="err" hidden></div>';
+    sheet.hidden = false;
+    const inp = $("price");
+    markEditing(oi, v);
+    // キーボードは自動で出さない（値段の欄を指で押したときだけ出る）。ボタンで済むことが多いため
+    sheet.querySelectorAll("[data-qp]").forEach((b) => b.addEventListener("click", () => { inp.value = b.dataset.qp; $("edForm").requestSubmit(); }));
+    $("edClose").addEventListener("click", closeEditor);
+    const ek = $("edKari");
+    if (ek) ek.addEventListener("click", () => {
+      const data = {
+        id: ent ? ent.id : newId(), at: ent ? ent.at : new Date().toISOString(), d: ent ? ent.d : today(),
+        s: s.s, gc: s.col, a: s.a || "", t: s.t || "", oc: o.c, oi: oi, v: v, vt: (vol && vol[0]) || "", j: (vol && vol[1]) || "", p: kariP, kari: true, dc: discR, done: false,
+      };
+      change({ op: "set", id: data.id, data });
+      closeEditor();
+    });
+    if (ent) $("edDel").addEventListener("click", () => { change({ op: "delete", id: ent.id }); closeEditor(); });
+    $("edForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const p = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10);
+      if (!(p > 0)) { const er = $("edErr"); er.textContent = "値段を数字で入れてください（例：380）"; er.hidden = false; return; }
+      if (!ent || ent.kari || ent.p !== p) notePrice(p);
+      const data = {
+        id: ent ? ent.id : newId(), at: ent ? ent.at : new Date().toISOString(), d: ent ? ent.d : today(),
+        s: s.s, gc: s.col, a: s.a || "", t: s.t || "", oc: o.c, oi: oi, v: v, vt: (vol && vol[0]) || "", j: (vol && vol[1]) || "", p: p, kari: false, dc: ent && ent.kari ? (ent.dc || 0) : discR, done: false,
+      };
+      change({ op: "set", id: data.id, data });
+      closeEditor();
+    });
+  }
+  // 値段を入れているマスに印を付け、下の入力画面に隠れていれば見える所まで上げる
+  function markEditing(oi, v) {
+    main.querySelectorAll("td.own.editing").forEach((t) => t.classList.remove("editing"));
+    const td = main.querySelector('td.own[data-oi="' + oi + '"][data-v="' + v + '"]');
+    if (!td) return;
+    td.classList.add("editing");
+    const fix = () => {
+      const box = $("tbox"), r = td.getBoundingClientRect(), sh = sheet.getBoundingClientRect();
+      const vv = window.visualViewport, bottom = Math.min(sh.top, vv ? vv.height : innerHeight) - 8;
+      if (r.bottom > bottom && box) box.scrollTop += r.bottom - bottom;
+      const r2 = td.getBoundingClientRect();
+      if (r2.bottom > bottom) window.scrollBy(0, r2.bottom - bottom);
+    };
+    setTimeout(fix, 50); setTimeout(fix, 400);   // キーボードが出たあとにも
+  }
+  function closeEditor() {
+    main.querySelectorAll("td.own.editing").forEach((t) => t.classList.remove("editing"));
+    sheet.hidden = true; sheet.innerHTML = "";
+    const p = edPos;
+    // 検索欄にもどすときにキーボードを出さない（キーボードが出ると、画面が上に飛ぶため）
+    q.setAttribute("inputmode", "none");
+    refocus();
+    if (p) {
+      const back = () => { window.scrollTo(0, p.y); const box = $("tbox"); if (box) { box.scrollLeft = p.l; box.scrollTop = p.t; } };
+      back(); setTimeout(back, 120); setTimeout(() => { back(); edPos = null; }, 400);   // キーボードが下がりきってからもう一度
+    }
+  }
+
+  // ---------- 仕入れ一覧 ----------
+  let lastExport = [];
+  try { lastExport = JSON.parse(localStorage.getItem("sc_lastExport") || "[]") || []; } catch (e) {}
+  let confirmClean = false;
+  function showPurch(keepScroll) {
+    curView = { type: "purch" };
+    const list = allEntries().sort((a, b) => (a.at < b.at ? 1 : -1));
+    const todoAll = list.filter((e) => !e.done), done = list.filter((e) => e.done);
+    const karis = todoAll.filter((e) => e.kari).sort((a, b) => (a.at < b.at ? -1 : 1));   // 金額が仮のもの（登録した順）
+    const todo = todoAll.filter((e) => !e.kari);   // Excelに書き込むのは金額が決まったものだけ
+    const waitIds = lastExport.filter((id) => todo.some((e) => e.id === id));
+    let h = "";
+    if (DATA && curView) h += '<div><button id="pBack">← もどる</button></div>';
+    // 金額が仮のもの：ここで金額を入れていく
+    h += '<section class="karibox"><h2 class="num"><span>金額が仮の本：' + karis.length + "冊</span>" +
+      '<span class="kariset">仮の金額 <input id="kariIn" type="text" inputmode="numeric" value="' + kariP + '" aria-label="仮の金額">円</span></h2>';
+    if (!karis.length) h += '<div class="krow"><div class="pv">店で「金額はあとで」を押した本が、ここに並びます。レシートを見ながら金額を入れてください。</div></div>';
+    karis.forEach((e) => {
+      h += '<div class="krow" data-id="' + esc(e.id) + '"><div class="pt">' + esc(e.t || "（セット名なし）") + '</div><span class="pill kari">仮 ' + yen(e.p) + "円" + (e.dc > 0 ? "・割引" + pctTxt(e.dc) : "") + "</span>" +
+        '<div class="pv num">' + esc(e.d) + "　" + circled(e.oi || 0) + "の列（" + esc(e.oc) + "列）　" + e.v + "巻" + (e.vt ? "　" + esc(e.vt) : "") + "</div>" +
+        '<form class="kform" data-id="' + esc(e.id) + '"><input class="kin" type="text" inputmode="numeric" enterkeyhint="next" autocomplete="off" placeholder="金額" aria-label="買った値段"><span>円</span><button type="submit" class="btn-primary">決定</button><span class="err" hidden></span></form></div>';
+    });
+    h += "</section>";
+    h += '<div class="callout"><div><b>まだExcelに入っていない仕入れ：' + todo.length + "冊</b>" + (karis.length ? '　<span class="note">（金額が仮の ' + karis.length + "冊は、金額を入れるまでExcel用に入りません）</span>" : "") + (pending.length ? '　<span class="note">（送れていない記入 ' + pending.length + "件。電波が入ると送ります）</span>" : "") + "</div>" +
+      '<div class="note">' + (!API ? '<span style="color:var(--bad)">保存場所が設定されていません。最初に送ったリンクから開き直してください（記入はこのスマホの中には残ります）。</span>' : syncOk === false ? "保存場所につながっていません（電波が入ると送ります）" : syncAt ? "保存場所と " + String(syncAt.getHours()).padStart(2, "0") + ":" + String(syncAt.getMinutes()).padStart(2, "0") + " にやりとりしました" : "保存場所につないでいます…") + "</div>" +
+      '<div class="note">パソコンでこのページを開いて「Excel用に保存」→ セットデータの「スマホの仕入れを書き込む」で、同じマスに書き込みます。</div>' +
+      '<div class="actions"><button id="pSave" class="btn-primary"' + (todo.length ? "" : " disabled") + ">Excel用に保存（" + todo.length + "冊）</button></div>" +
+      (waitIds.length ? '<div>Excelに書き込めたら押してください：<div class="actions" style="margin-top:6px"><button id="pDone">保存した ' + waitIds.length + "冊を反映済みにする</button></div></div>" : "") +
+      '<div id="pMsg" class="note" hidden></div></div>';
+    if (!list.length) h += '<div class="empty"><b>まだ記入はありません</b><div class="note">セットの表で、買った巻の「なし」を押すと値段を記入できます。</div></div>';
+    // 日付ごと
+    const days = new Map();
+    list.forEach((e) => { if (!days.has(e.d)) days.set(e.d, []); days.get(e.d).push(e); });
+    days.forEach((es, d) => {
+      const sum = es.reduce((a, e) => a + netP(e), 0);   // 割引後
+      h += '<section class="day"><h2 class="num"><span>' + esc(d) + "</span><span>" + es.length + "冊・" + yen(sum) + "円</span></h2>";
+      es.forEach((e) => {
+        h += '<div class="prow" data-id="' + esc(e.id) + '"><div class="pt">' + esc(e.t || "（セット名なし）") + '</div><div class="pp num">' + (e.kari ? "仮 " : "") + yen(e.p) + "円" + (e.dc > 0 ? '<span class="dctag">-' + pctTxt(e.dc) + "</span>" : "") + '</div><span class="pill ' + (e.kari ? "kari" : e.done ? "done" : "todo") + '">' + (e.kari ? "金額が仮" : e.done ? "反映済み" : "未反映") + "</span>" +
+          '<div class="pv num">' + circled(e.oi || 0) + "の列（" + esc(e.oc) + "列）　" + e.v + "巻" + (e.vt ? "　" + esc(e.vt) : "") + "</div></div>";
+      });
+      h += "</section>";
+    });
+    if (done.length) h += '<div class="actions"><button id="pClean">' + (confirmClean ? "本当に消す（反映済み " + done.length + "冊）" : "反映済みを一覧から消す（" + done.length + "冊）") + "</button>" + (confirmClean ? '<button id="pCleanNo">やめる</button>' : "") + "</div>";
+    main.innerHTML = h;
+    const ki = $("kariIn");
+    ki.addEventListener("change", () => {
+      const k = parseInt(String(ki.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10);
+      if (k > 0) saveKariP(k); ki.value = kariP;
+    });
+    main.querySelectorAll(".kform").forEach((f) => f.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      const inp = f.querySelector(".kin"), er = f.querySelector(".err");
+      const p = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10);
+      if (!(p > 0)) { er.textContent = "数字で入れてください"; er.hidden = false; return; }
+      const e = allEntries().find((x) => x.id === f.dataset.id);
+      if (!e) return;
+      notePrice(p);
+      change({ op: "set", id: e.id, data: Object.assign({}, e, { p: p, kari: false }) });
+      // 次の仮の本の金額欄へ
+      const nx = main.querySelector(".kin");
+      if (nx) setTimeout(() => { try { nx.focus(); } catch (x) {} }, 30);
+    }));
+    const back = $("pBack");
+    if (back) back.addEventListener("click", () => (lastList ? showList(lastList.intro) : showHome()));
+    $("pSave").addEventListener("click", () => exportCsv(todo));
+    const pd = $("pDone");
+    if (pd) pd.addEventListener("click", () => {
+      allEntries().filter((e) => waitIds.includes(e.id)).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }));
+      lastExport = []; try { localStorage.setItem("sc_lastExport", "[]"); } catch (e) {}
+      showPurch(true);
+    });
+    const pc = $("pClean");
+    if (pc) pc.addEventListener("click", () => {
+      if (!confirmClean) { confirmClean = true; showPurch(true); return; }
+      confirmClean = false;
+      done.forEach((e) => change({ op: "delete", id: e.id }));
+    });
+    const pn = $("pCleanNo");
+    if (pn) pn.addEventListener("click", () => { confirmClean = false; showPurch(true); });
+    main.querySelectorAll(".prow").forEach((r) => r.addEventListener("click", () => {
+      const e = allEntries().find((x) => x.id === r.dataset.id);
+      if (!e || !DATA) return;
+      const si = setIdx.get(e.s + "|" + e.gc);
+      if (si == null) return;
+      const s = DATA.sets[si];
+      const oi = s.own.findIndex((o) => o.c === e.oc);
+      if (oi < 0) return;
+      lastList = lastList || null;
+      showSet(si, e.v - 1, false);
+    }));
+    if (!keepScroll) window.scrollTo(0, 0);
+  }
+
+  // Excel用のファイル（CSV）
+  const csvq = (v) => { const t = String(v == null ? "" : v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  async function exportCsv(todo) {
+    const msg = $("pMsg");
+    // 値段は値札の値段。割引の日は「店」を「店舗 20%」のようにして、セットデータで割引の色に塗る
+    const rows = [["日付", "シート", "セット名", "セットのASIN", "グレーの列", "書き込む列", "巻", "書名", "JAN", "値段", "店", "ID"]];
+    todo.slice().sort((a, b) => (a.at < b.at ? -1 : 1)).forEach((e) => rows.push([e.d, e.s, e.t, e.a, e.gc, e.oc, e.v, e.vt, e.j, e.p, e.dc > 0 ? "店舗 " + pctTxt(e.dc) : "店舗", e.id]));
+    const csv = "﻿" + rows.map((r) => r.map(csvq).join(",")).join("\r\n") + "\r\n";
+    const d = new Date();
+    const fn = "スマホ仕入れ_" + d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + "_" + String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0") + ".csv";
+    try {
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      lastExport = todo.map((e) => e.id);
+      try { localStorage.setItem("sc_lastExport", JSON.stringify(lastExport)); } catch (e) {}
+      showPurch(true);
+      const m2 = $("pMsg"); m2.hidden = false; m2.textContent = fn + " をダウンロードフォルダに保存しました。";
+    } catch (e) {
+      msg.hidden = false;
+      msg.textContent = e && e.code === "declined" ? "保存をやめました。" : "保存できませんでした。もう一度押してください。";
+    }
+  }
+
+  $("purchBtn").addEventListener("click", () => { closeEditor(); showPurch(false); });
+  let histFirst = true;
+  async function pull() {
+    if (!API) return;
+    await flush();
+    if (pending.length) return;   // 送れていないうちは取りにいかない（古いもので上書きしないため）
+    try {
+      const j = await api({ a: "pull" });
+      syncOk = true; syncAt = new Date();
+      // 見たセットの履歴：最初はこの端末だけにある分を送り、あとは保存場所のものに合わせる
+      const srv = new Map();
+      (j.history || []).forEach((x) => { if (x && x.id) srv.set(x.id, x); });
+      if (histFirst) {
+        histFirst = false;
+        hist.forEach((x, id) => {
+          const sv = srv.get(id);
+          if (!sv || (x.at > sv.at && x.n >= sv.n)) { histPut(x); srv.set(id, x); }
+        });
+      }
+      hist.clear();
+      srv.forEach((x, id) => hist.set(id, x));
+      saveHistLocal();
+      server.clear();
+      (j.purchases || []).forEach((x) => { if (x && x.id) server.set(x.id, x); });
+      // 保存場所に入ったものは、この端末だけの控えから外す
+      server.forEach((_, id) => { if (!pending.some((op) => op.id === id)) localOnly.delete(id); });
+      localOnly.forEach((_, id) => { if (!pending.some((op) => op.id === id) && !server.has(id)) localOnly.delete(id); });
+      saveLocal();
+      entCache = null;
+      updatePurchBtn();
+      if (sheet.hidden) {
+        if (curView.type === "home" && DATA && !DATA.sample) showHome(); else rerender();
+      }
+    } catch (e) {
+      syncOk = false;
+      updatePurchBtn();
+    }
+  }
+  window.addEventListener("online", pull);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pull(); });
+  setInterval(() => { if (!document.hidden) pull(); }, 60000);
+  if (API) {
+    // この端末だけにあった記入を送る
+    localOnly.forEach((e, id) => { if (!pending.some((op) => op.id === id)) pending.push({ c: "purchases", op: "set", id, data: e }); });
+    savePending();
+    pull();
+  }
+
+  // 次のバーコードがそのまま入るように、検索の欄を選んだ状態にしておく
+  function refocus() {
+    if (sheet && !sheet.hidden) return;
+    // キーボードは出さない（検索欄を指で押したときだけ出す）。バーコードリーダーはそのまま入る
+    if (document.activeElement !== q || q.getAttribute("inputmode") !== null) q.setAttribute("inputmode", "none");
+    try { q.focus({ preventScroll: true }); q.select(); } catch (e) {}
+  }
+
+  // 探したら検索欄を空にして、次のバーコードをそのまま読めるようにする（何で探したかは薄い文字で残す）
+  $("f").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = q.value;
+    if (!v.trim()) return;
+    search(v);
+    q.value = "";
+    q.placeholder = "前回：" + v.trim() + "　／次のバーコードを読む";
+    // 画面のキーボードだけ下げる。欄は選んだままなので、バーコードリーダーはそのまま入る
+    q.setAttribute("inputmode", "none");
+    q.blur();
+    setTimeout(refocus, 60);
+  });
+  // 履歴（トップ画面）にもどる
+  $("homeBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; showHome(); window.scrollTo(0, 0); });
+  // 検索欄を指で押したときは、キーボードを出す（書名を打つとき）
+  q.addEventListener("pointerdown", () => {
+    if (q.getAttribute("inputmode") === "none") { q.removeAttribute("inputmode"); q.blur(); setTimeout(() => { try { q.focus(); } catch (e) {} }, 0); }
+  });
+  // 検索欄を空にしたら（×を押したときなど）、履歴のある最初の画面にもどる
+  q.addEventListener("input", () => { if (q.value === "" && curView.type !== "home" && sheet.hidden) showHome(); });
+  // バーコード（13桁の数字）が入ったら、「探す」を押さなくても自動で探す
+  let autoT = null;
+  q.addEventListener("input", () => {
+    clearTimeout(autoT);
+    const d = q.value.normalize("NFKC").replace(/[\s-]/g, "");
+    if (/^\d{13}$/.test(d)) autoT = setTimeout(() => { if (q.value.normalize("NFKC").replace(/[\s-]/g, "") === d) $("f").requestSubmit(); }, 150);
+  });
+
+  $("file").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    info.textContent = "読み込んでいます…";
+    const r = new FileReader();
+    r.onload = async () => {
+      try {
+        const txt = String(r.result).replace(/^﻿/, "");
+        const obj = JSON.parse(txt);
+        if (!obj || !Array.isArray(obj.sets)) throw new Error("形がちがいます");
+        const ok = await saveData(obj);
+        useData(obj);
+        if (!ok) info.innerHTML += "　<span class=\"sample\">（このスマホに保存できませんでした。ページを閉じると消えます）</span>";
+        q.value = "";
+        showHome();
+      } catch (err) {
+        info.innerHTML = '<span class="sample">読み込めませんでした</span>：セットデータの「スマホ用に書き出す」でできたファイル（.json）を選んでください。';
+      }
+      e.target.value = "";
+    };
+    r.onerror = () => { info.textContent = "ファイルを読めませんでした。もう一度選んでください。"; };
+    r.readAsText(f, "utf-8");
+  });
+
+  // ---------- 出版社・作者：ページと一緒に置いた author.json を読む（キーはセットのASIN、なければ "J"+1巻のJAN） ----------
+  // 公開の置き場所には暗号化して置いてある。合言葉（KEY）で戻す
+  async function loadEnc(path) {
+    if (!KEY || !window.crypto || !crypto.subtle) return null;
+    const r = await fetch(path, { cache: "no-cache" });
+    if (!r.ok) return null;
+    const o = await r.json();
+    const b = (t) => Uint8Array.from(atob(t), (ch) => ch.charCodeAt(0));
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(KEY), "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b(o.s), iterations: 200000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    const gz = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b(o.i) }, key, b(o.d));
+    const txt = await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    return JSON.parse(txt.replace(/^\ufeff/, ""));
+  }
+  let AU = null;
+  function auOf(s) {
+    if (!s) return null;
+    if (s.pub || s.au) return { p: s.pub || "", a: s.au || "" };   // Excelの12・13行目
+    if (!AU) return null;
+    return AU[String(s.a || "").toUpperCase()] || (s.vol && s.vol[0] ? AU["J" + s.vol[0][1]] : null) || null;
+  }
+  async function loadAuthor() {
+    try { const c = localStorage.getItem("sc_au"); if (c) { AU = JSON.parse(c); if (DATA) buildIndex(DATA); } } catch (e) {}
+    try {
+      const x = await loadEnc("data/author.enc");
+      if (x) { AU = x; try { localStorage.setItem("sc_au", JSON.stringify(AU)); } catch (e) {} }
+    } catch (e) {}
+    if (DATA) buildIndex(DATA);
+    if (curView.type === "home") { if (DATA && !DATA.sample) showHome(); } else rerender();
+  }
+  const auLine = (s) => { const a = auOf(s); return a && (a.p || a.a) ? esc([a.p, a.a].filter(Boolean).join("　")) : ""; };
+
+  // ---------- セットの小部屋（ソルーさんの投稿）：ページと一緒に置いた koheya.json を読む ----------
+  let KH = null;
+  async function loadKoheya() {
+    try { const c = localStorage.getItem("sc_kh"); if (c) KH = JSON.parse(c); } catch (e) {}
+    try {
+      const x = await loadEnc("data/koheya.enc");
+      if (x) { KH = x; try { localStorage.setItem("sc_kh", JSON.stringify(KH)); } catch (e) {} }
+    } catch (e) {}
+    if (curView.type === "home") { if (DATA && !DATA.sample) showHome(); } else rerender();
+  }
+  // ASINで探す（列が動いてもずれない）。ASINで見つからなければ、シートと列の位置で探す
+  const khOf = (s) => {
+    if (!KH || !KH.sets) return null;
+    const k = KH.asin && s.a ? KH.asin[String(s.a).toUpperCase()] : null;
+    return (k && KH.sets[k]) || KH.sets[s.s + "|" + s.col] || null;
+  };
+  const khGradeCls = (g) => (g === "◎" || g === "○" ? "g1" : g === "×" ? "g3" : "");
+  function khHtml(s) {
+    const k = khOf(s);
+    if (!k) return "";
+    let h = '<div class="kh"><div class="kt"><span style="font-size:11px;color:var(--muted)">セットの小部屋</span><span class="kg ' + khGradeCls(k.g) + '">' + esc(k.g || "―") + "</span>" +
+      (k.cnt ? '<span class="num">投稿 ' + k.cnt + "回（◎○ " + (k.good || 0) + "・× " + (k.bad || 0) + "）　最終 " + esc(k.last || "") + "</span>" : "") + "</div>";
+    const tags = String(k.tags || "").split(/[／\/]/).map((t) => t.trim()).filter(Boolean);
+    if (tags.length || k.place) h += '<div class="kt">' + tags.map((t) => '<span class="tag' + (/カカリ|枯れ|非推奨|遅/.test(t) ? " warn" : "") + '">' + esc(t) + "</span>").join("") + (k.place ? '<span class="note">売り場：' + esc(k.place) + "</span>" : "") + "</div>";
+    if (k.places && k.places.length > 1) h += '<div class="kt"><b>ほかの売り場</b><span>' + k.places.filter((p) => p !== k.place).map(esc).join("／") + "</span></div>";
+    (k.hints || []).forEach((n) => { h += '<div class="kn"><span class="d num">置き場所 ' + esc(String(n[0]).slice(2)) + "</span>" + esc(n[1]) + "</div>"; });
+    if (k.sold && k.sold.length) h += '<div class="kt"><b>小部屋で売れた</b><span class="num">' + k.sold.map((x) => esc(String(x[0]).slice(5)) + " " + yen(x[1]) + "円").join("・") + "</span></div>";
+    if (k.kk && k.kk.length) h += '<div class="kt"><span class="kk">カカリ</span><span>' + k.kk.join("・") + "巻（ソルーさんの投稿から）</span></div>";
+    (k.notes || []).forEach((n) => { h += '<div class="kn"><span class="d num">' + esc(n[0]) + " " + esc(n[1]) + "</span>" + esc(n[2]) + "</div>"; });
+    return h + "</div>";
+  }
+
+  // 起動：このスマホに保存したデータ → なければ見本
+  updatePurchBtn();
+  loadKoheya();
+  loadAuthor();
+  useData(SAMPLE);
+  showHome();
+  if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); } catch (e) {} }
+  loadData().then((obj) => {
+    if (obj && Array.isArray(obj.sets)) { useData(obj); showHome(); }
+  });
+})();
+</script>
+
+
+</body></html>
