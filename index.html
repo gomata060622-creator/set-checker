@@ -1043,7 +1043,19 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     // この端末だけにあった記入を送る
     localOnly.forEach((e, id) => { if (!pending.some((op) => op.id === id)) pending.push({ c: "purchases", op: "set", id, data: e }); });
     savePending();
-    pull();
+    migrate().then(pull);
+  }
+  // 前の保存場所（Claudeのページ）にあった記入と履歴を、1回だけ移す（保存場所にまだないものだけ入る）
+  async function migrate() {
+    try {
+      if (localStorage.getItem("sc_migrated") === "1") return;
+      const m = await loadEnc("data/migrate.enc");
+      if (!m) return;
+      const ops = [];
+      ["purchases", "history"].forEach((c) => Object.keys(m[c] || {}).forEach((id) => ops.push({ c, op: "add", id, data: m[c][id] })));
+      if (ops.length) await api({ a: "push", ops });
+      localStorage.setItem("sc_migrated", "1");
+    } catch (e) {}
   }
 
   // 次のバーコードがそのまま入るように、検索の欄を選んだ状態にしておく
