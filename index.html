@@ -1040,10 +1040,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       showPurch(true);
     });
     bindTPurDays();
-    // 「消す」：1回目で「本当に消す」に変わり、もう1回押すと消える（間違えて記入・送ったものを消す）
+    // 「消す」：1回押すと消える（間違えて記入・送ったものを消す）
     main.querySelectorAll(".pdel").forEach((b) => b.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      if (b.dataset.c !== "1") { b.dataset.c = "1"; b.textContent = "本当に消す"; b.classList.add("btn-danger"); return; }
       change({ op: "delete", id: b.dataset.id });
     }));
     const pc = $("pClean");
