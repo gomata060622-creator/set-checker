@@ -278,7 +278,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
-    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="homeBtn" class="purchbtn" type="button">トップ</button></span>
+    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="homeBtn" class="purchbtn" type="button">トップ</button></span>
   </div>
 </div>
 
@@ -777,6 +777,13 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     return [...m.values()].filter((e) => e && e.id && e.kind === "t");
   }
   // 単品のお気に入り（仕入れないけど、セールの日などにまた見たい本。kind:"f"）
+  // 届いた本（ネットで仕入れて家に届いた本のJAN。kind:"a"）
+  function allA() {
+    const m = new Map(server);
+    localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
+    pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
+    return [...m.values()].filter((e) => e && e.id && e.kind === "a");
+  }
   function allF() {
     const m = new Map(server);
     localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
@@ -867,13 +874,14 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     else if (curView.type === "tsrch") showTSrch();
     else if (curView.type === "tdet") showTDet(curView.id);
     else if (curView.type === "tfav") showTFav();
+    else if (curView.type === "arr") showArr();
   }
   function updatePurchBtn() {
     const all = allEntries().filter((e) => !e.done);
-    let tn = 0; try { tn = allT().filter((e) => !e.done).length; } catch (e) {}
+    let tn = 0; try { tn = allT().filter((e) => !e.done).length + allA().filter((e) => !e.done).length; } catch (e) {}
     const n = all.length + tn, k = all.filter((e) => e.kari).length;
     $("purchBtn").innerHTML = "仕入れ一覧" + (n ? "（未反映 <b>" + n + "</b>" + (k ? "・仮 <b>" + k + "</b>" : "") + "）" : "");
-    try { updateTanBtn(); } catch (e) {}
+    try { updateTanBtn(); updateArrBtn(); } catch (e) {}
   }
 
   // ---------- 値段を入れる画面 ----------
@@ -999,6 +1007,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     // 単品の仕入れも同じ一覧に出す（Excel用に保存を1回押せば、セット用と単品用の2つのファイルができる）
     const tl = allT().sort((a, b) => (a.at < b.at ? 1 : -1)), ttodo = tl.filter((e) => !e.done), tdone = tl.filter((e) => e.done);
     const tWait = tLastExport.filter((id) => ttodo.some((e) => e.id === id));
+    const al = allA().sort((a, b) => (a.at < b.at ? 1 : -1)), atodo = al.filter((e) => !e.done), adone = al.filter((e) => e.done);
+    const aWait = aLastExport.filter((id) => atodo.some((e) => e.id === id));
     let h = "";
     // 金額が仮のもの：ここで金額を入れていく
     h += '<section class="karibox"><h2 class="num"><span>金額が仮の本：' + karis.length + "冊</span>" +
@@ -1010,14 +1020,16 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         '<form class="kform" data-id="' + esc(e.id) + '"><input class="kin" type="text" inputmode="numeric" enterkeyhint="next" autocomplete="off" placeholder="金額" aria-label="買った値段"><span>円</span><button type="submit" class="btn-primary">決定</button><span class="err" hidden></span></form></div>';
     });
     h += "</section>";
-    h += '<div class="callout"><div><b>まだExcelに入っていない仕入れ：セット ' + todo.length + "冊・単品 " + ttodo.length + "冊</b>" + (karis.length ? '　<span class="note">（金額が仮の ' + karis.length + "冊は、金額を入れるまでExcel用に入りません）</span>" : "") + (pending.length ? '　<span class="note">（送れていない記入 ' + pending.length + "件。電波が入ると送ります）</span>" : "") + (badOps.length ? '　<span class="note" style="color:var(--bad)">（送れなかった記入 ' + badOps.length + "件。このスマホには残っています）</span>" : "") + "</div>" +
+    h += '<div class="callout"><div><b>まだExcelに入っていない仕入れ：セット ' + todo.length + "冊・単品 " + ttodo.length + "冊・到着 " + atodo.length + "冊</b>" + (karis.length ? '　<span class="note">（金額が仮の ' + karis.length + "冊は、金額を入れるまでExcel用に入りません）</span>" : "") + (pending.length ? '　<span class="note">（送れていない記入 ' + pending.length + "件。電波が入ると送ります）</span>" : "") + (badOps.length ? '　<span class="note" style="color:var(--bad)">（送れなかった記入 ' + badOps.length + "件。このスマホには残っています）</span>" : "") + "</div>" +
       '<div class="note">' + (!API ? '<span style="color:var(--bad)">保存場所が設定されていません。最初に送ったリンクから開き直してください（記入はこのスマホの中には残ります）。</span>' : syncOk === false ? "保存場所につながっていません（電波が入ると送ります）" + (syncErr ? "　理由：" + esc(syncErr) : "") : syncAt ? "保存場所と " + String(syncAt.getHours()).padStart(2, "0") + ":" + String(syncAt.getMinutes()).padStart(2, "0") + " にやりとりしました" : "保存場所につないでいます…") + "</div>" +
-      '<div class="note">パソコンでこのページを開いて「Excel用に保存」を押すと、セット本は「スマホ仕入れ_….csv」（セットデータの「スマホの仕入れを書き込む」で書き込む）、単品は「StockList_….csv」（00仕入れリストの仕入予定シートの取り込みボタンで入る）がダウンロードフォルダに入ります。</div>' +
-      '<div class="actions"><button id="pSave" class="btn-primary"' + (todo.length || ttodo.length ? "" : " disabled") + ">Excel用に保存（セット " + todo.length + "冊・単品 " + ttodo.length + "冊）</button></div>" +
-      (waitIds.length || tWait.length ? '<div>Excelに取り込めたら押してください：<div class="actions" style="margin-top:6px"><button id="pDone">保存した ' + (waitIds.length + tWait.length) + "冊を反映済みにする</button></div></div>" : "") +
+      '<div class="note">パソコンでこのページを開いて「Excel用に保存」を押すと、セット本は「スマホ仕入れ_….csv」（セットデータの「スマホの仕入れを書き込む」で書き込む）、単品は「StockList_….csv」、届いた本は「到着_….csv」（どちらも00仕入れリストの仕入予定シートの取り込みボタンで入る）がダウンロードフォルダに入ります。</div>' +
+      '<div class="actions"><button id="pSave" class="btn-primary"' + (todo.length || ttodo.length || atodo.length ? "" : " disabled") + ">Excel用に保存（セット " + todo.length + "冊・単品 " + ttodo.length + "冊・到着 " + atodo.length + "冊）</button></div>" +
+      (waitIds.length || tWait.length || aWait.length ? '<div>Excelに取り込めたら押してください：<div class="actions" style="margin-top:6px"><button id="pDone">保存した ' + (waitIds.length + tWait.length + aWait.length) + "冊を反映済みにする</button></div></div>" : "") +
       '<div id="pMsg" class="note" hidden></div></div>';
-    if (!list.length && !tl.length) h += '<div class="empty"><b>まだ記入はありません</b><div class="note">セットの表で、買った巻の「なし」を押すと値段を記入できます。</div></div>';
-    if (tl.length) h += '<h2 class="sec">単品（' + ttodo.length + "冊が未反映）</h2>" + tPurDays(tl) + (list.length ? '<h2 class="sec">セット本</h2>' : "");   // 単品を上に出す（見落とさないように）
+    if (!list.length && !tl.length && !al.length) h += '<div class="empty"><b>まだ記入はありません</b><div class="note">セットの表で、買った巻の「なし」を押すと値段を記入できます。</div></div>';
+    if (tl.length) h += '<h2 class="sec">単品（' + ttodo.length + "冊が未反映）</h2>" + tPurDays(tl);
+    if (al.length) h += '<h2 class="sec">到着（' + atodo.length + "冊が未反映）</h2>" + arrDays(al);
+    if ((tl.length || al.length) && list.length) h += '<h2 class="sec">セット本</h2>';   // 単品を上に出す（見落とさないように）
     // 日付ごと
     const days = new Map();
     list.forEach((e) => { if (!days.has(e.d)) days.set(e.d, []); days.get(e.d).push(e); });
@@ -1030,7 +1042,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       });
       h += "</section>";
     });
-    const ndone = done.length + tdone.length;
+    const ndone = done.length + tdone.length + adone.length;
     if (ndone) h += '<div class="actions"><button id="pClean">' + (confirmClean ? "本当に消す（反映済み " + ndone + "冊）" : "反映済みを一覧から消す（" + ndone + "冊）") + "</button>" + (confirmClean ? '<button id="pCleanNo">やめる</button>' : "") + "</div>";
     main.innerHTML = h;
     const ki = $("kariIn");
@@ -1057,6 +1069,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const fs = [];
       if (todo.length) fs.push(exportCsv(todo, true));
       if (ttodo.length) fs.push(tExportCsv(ttodo, true));
+      if (atodo.length) fs.push(aExportCsv(atodo));
       showPurch(true);
       const m2 = $("pMsg"); m2.hidden = false;
       m2.textContent = fs.every(Boolean) ? fs.join("・") + " をダウンロードフォルダに保存しました。" : "保存できませんでした。もう一度押してください。";
@@ -1065,6 +1078,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (pd) pd.addEventListener("click", () => {
       allEntries().filter((e) => waitIds.includes(e.id)).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }));
       allT().filter((e) => tWait.includes(e.id)).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }));
+      allA().filter((e) => aWait.includes(e.id)).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }));
+      aLastExport = []; try { localStorage.setItem("sc_alastExport", "[]"); } catch (e) {}
       lastExport = []; try { localStorage.setItem("sc_lastExport", "[]"); } catch (e) {}
       tLastExport = []; try { localStorage.setItem("sc_tlastExport", "[]"); } catch (e) {}
       showPurch(true);
@@ -1079,7 +1094,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (pc) pc.addEventListener("click", () => {
       if (!confirmClean) { confirmClean = true; showPurch(true); return; }
       confirmClean = false;
-      done.concat(tdone).forEach((e) => change({ op: "delete", id: e.id }));
+      done.concat(tdone, adone).forEach((e) => change({ op: "delete", id: e.id }));
     });
     const pn = $("pCleanNo");
     if (pn) pn.addEventListener("click", () => { confirmClean = false; showPurch(true); });
@@ -1197,7 +1212,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     e.preventDefault();
     const v = q.value;
     if (!v.trim()) return;
-    if (bookoffTag(v)) onTag(bookoffTag(v)); else if (isTView()) tLookup(v); else search(v);
+    if (curView.type === "arr") addArrival(v); else if (bookoffTag(v)) onTag(bookoffTag(v)); else if (isTView()) tLookup(v); else search(v);
     q.value = "";
     q.placeholder = "前回：" + v.trim() + "　／次のバーコードを読む";
     // 画面のキーボードだけ下げる。欄は選んだままなので、バーコードリーダーはそのまま入る
@@ -1241,7 +1256,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (q.getAttribute("inputmode") === "none") { q.removeAttribute("inputmode"); q.blur(); setTimeout(() => { try { q.focus(); } catch (e) {} }, 0); }
   });
   // 検索欄を空にしたら（×を押したときなど）、履歴のある最初の画面にもどる
-  q.addEventListener("input", () => { if (q.value === "" && curView.type !== "home" && !isTView() && sheet.hidden) showHome(); });
+  q.addEventListener("input", () => { if (q.value === "" && curView.type !== "home" && curView.type !== "arr" && !isTView() && sheet.hidden) showHome(); });
   // バーコード（13桁の数字）が入ったら、「探す」を押さなくても自動で探す
   let autoT = null;
   q.addEventListener("input", () => {
@@ -2044,6 +2059,80 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   $("camBtn").addEventListener("click", () => { if (camStream) camStop(); else camOpen(); });
   $("camClose").addEventListener("click", () => camStop());
   document.addEventListener("visibilitychange", () => { if (document.hidden && camStream) camStop(); });
+
+  // ---------- 到着（ネットで仕入れて家に届いた本：バーコードを読む＝届いた記録。Keepaは使わない） ----------
+  let aLastExport = [];
+  try { aLastExport = JSON.parse(localStorage.getItem("sc_alastExport") || "[]") || []; } catch (e) {}
+  function arrCode(raw) {
+    const t = String(raw || "").normalize("NFKC").replace(/[\s-]/g, "").toUpperCase();
+    if (/^\d{13}$/.test(t) || /^\d{9}[\dX]$/.test(t) || /^B0[0-9A-Z]{8}$/.test(t) || /^\d{8}$|^\d{12}$/.test(t)) return t;
+    return null;
+  }
+  function titleOf(code) {
+    const hit = TLIST.find((x) => x.jan === code || x.asin === code) || allT().find((x) => x.j === code || x.a === code);
+    return hit ? hit.t || "" : "";
+  }
+  function addArrival(raw) {
+    const c = arrCode(raw);
+    if (!c) { tToast(bookoffTag(raw) ? "値札は読まなくて大丈夫です" : "本のバーコードではないようです：" + String(raw).trim()); return; }
+    const data = { kind: "a", id: newId(), at: new Date().toISOString(), d: today(), j: c, t: titleOf(c), done: false };
+    change({ op: "set", id: data.id, data });
+    try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
+    if (curView.type === "arr") showArr();
+  }
+  function arrDays(list) {
+    let h = "";
+    const days = new Map();
+    list.forEach((e) => { if (!days.has(e.d)) days.set(e.d, []); days.get(e.d).push(e); });
+    const cnt = {};
+    list.forEach((e) => { if (!e.done) cnt[e.j] = (cnt[e.j] || 0) + 1; });
+    days.forEach((es, d) => {
+      h += '<section class="day"><h2 class="num"><span>' + esc(d) + "（到着）</span><span>" + es.length + "冊</span></h2>";
+      es.forEach((e) => {
+        h += '<div class="prow arow" data-id="' + esc(e.id) + '"><div class="pt num">' + esc(e.j) + (e.t ? "　" + esc(e.t) : "") + (!e.done && cnt[e.j] > 1 ? '　<span class="pill kari">' + cnt[e.j] + "回読んだ</span>" : "") +
+          '</div><div class="pp num">' + esc(String(new Date(e.at).getHours()).padStart(2, "0") + ":" + String(new Date(e.at).getMinutes()).padStart(2, "0")) + '</div><span class="pill ' + (e.done ? "done" : "todo") + '">' + (e.done ? "反映済み" : "未反映") + "</span>" +
+          '<button type="button" class="pdel" data-id="' + esc(e.id) + '">消す</button></div>';
+      });
+      h += "</section>";
+    });
+    return h;
+  }
+  function showArr() {
+    curView = { type: "arr" };
+    const al = allA().sort((a, b) => (a.at < b.at ? 1 : -1)), todo = al.filter((e) => !e.done);
+    let h = '<div class="callout"><div><b>到着：届いた本のバーコードを次々に読んでください</b>（読んだだけで記録されます。Keepaは使いません）</div>' +
+      '<div class="note">まだExcelに入っていない到着：' + todo.length + "冊。パソコンの仕入れ一覧で「Excel用に保存」→ 00仕入れリストの仕入予定シートの取り込みボタンで、本年度仕入分に入ります。間違えて読んだものは「消す」で取り消せます。</div></div>";
+    if (!al.length) h += '<div class="empty"><b>まだ読んでいません</b><div class="note">カメラ（📷）かバーコードリーダーで読んでください。</div></div>';
+    else h += arrDays(al.filter((e) => !e.done)) + (al.some((e) => e.done) ? '<div class="note">反映済みの到着は、仕入れ一覧で消せます。</div>' : "");
+    main.innerHTML = h;
+    main.querySelectorAll(".pdel").forEach((b) => b.addEventListener("click", (ev) => { ev.stopPropagation(); change({ op: "delete", id: b.dataset.id }); }));
+    updateArrBtn();
+    refocus();
+  }
+  function updateArrBtn() {
+    const b = $("arrBtn"); if (!b) return;
+    const n = allA().filter((e) => !e.done).length;
+    b.innerHTML = (curView.type === "arr" ? "到着中" : "到着") + (n ? "（" + n + "）" : "");
+    b.classList.toggle("dcon", curView.type === "arr");
+  }
+  function aExportCsv(todo) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const rows = [["JAN", "読んだ日時", "ID"]];
+    todo.slice().sort((a, b) => (a.at < b.at ? -1 : 1)).forEach((e) => { const d = new Date(e.at); rows.push([e.j, d.getFullYear() + "/" + pad(d.getMonth() + 1) + "/" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()), e.id]); });
+    const csv = rows.map((r) => r.map(csvq).join(",")).join("\r\n") + "\r\n";
+    const d = new Date();
+    const fn = "到着_" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "_" + pad(d.getHours()) + pad(d.getMinutes()) + ".csv";
+    try {
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      aLastExport = todo.map((e) => e.id);
+      try { localStorage.setItem("sc_alastExport", JSON.stringify(aLastExport)); } catch (e) {}
+      return fn;
+    } catch (e) { return null; }
+  }
+  $("arrBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; if (curView.type === "arr") showHome(); else showArr(); window.scrollTo(0, 0); });
   $("tanBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; if (isTView()) { showHome(); } else showTan(); window.scrollTo(0, 0); updateTanBtn(); });
 
   // ================= ブラウザのように「戻る」 =================
@@ -2069,12 +2158,14 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
   window.addEventListener("scroll", () => { const st = navStates[navPos]; if (st) st.y = window.scrollY; }, { passive: true });
   const _home = showHome, _list = showList, _set = showSet, _purch = showPurch, _rerender = rerender;
-  showHome = function () { const r = _home.apply(this, arguments); navRecord(); try { updateTanBtn(); } catch (e) {} return r; };
+  showHome = function () { const r = _home.apply(this, arguments); navRecord(); try { updateTanBtn(); updateArrBtn(); } catch (e) {} return r; };
   showList = function () { const r = _list.apply(this, arguments); navRecord(); return r; };
   showSet = function () { const r = _set.apply(this, arguments); navRecord(); return r; };
   showPurch = function () { const r = _purch.apply(this, arguments); navRecord(); return r; };
   const _tan = showTan, _tdet = showTDet, _tpur = showTPur, _tsrch = showTSrch, _tfav = showTFav;
   showTFav = function () { const r = _tfav.apply(this, arguments); navRecord(); return r; };
+  const _arr = showArr;
+  showArr = function () { const r = _arr.apply(this, arguments); navRecord(); return r; };
   showTSrch = function () { const r = _tsrch.apply(this, arguments); navRecord(); return r; };
   showTan = function () { const r = _tan.apply(this, arguments); navRecord(); return r; };
   showTDet = function () { const r = _tdet.apply(this, arguments); navRecord(); return r; };
@@ -2099,6 +2190,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       else if (v.type === "tpur") showTPur(false);
       else if (v.type === "tsrch") showTSrch();
       else if (v.type === "tfav") showTFav();
+      else if (v.type === "arr") showArr();
       else showHome();
       const y = st.y || 0;
       setTimeout(() => window.scrollTo(0, y), 0);
