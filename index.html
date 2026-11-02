@@ -213,7 +213,8 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .tshop input { font: inherit; width: 7em; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .tbtns button { font-size: 12px; padding: 4px 8px; }
 .tlist { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.trow { display: grid; grid-template-columns: 112px 1fr; gap: 8px; padding: 8px; border-top: 1px solid var(--line); background: var(--panel); position: relative; transition: transform .15s; touch-action: pan-y; }
+.trow { display: grid; grid-template-columns: 112px 1fr; gap: 8px; padding: 8px; border-top: 1px solid var(--line); background: var(--panel); position: relative; transition: transform .15s; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.trow img, .trow svg { pointer-events: none; -webkit-user-drag: none; }
 .trow:first-child { border-top: 0; }
 .trow.tpre { background: #fde9e4; }
 .trow.swR { box-shadow: inset 6px 0 0 var(--good); }
@@ -1430,21 +1431,27 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     });
     main.querySelectorAll(".tretry").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); const r = TLIST.find((x) => x.id === b.dataset.id); if (r) { TLIST = TLIST.filter((x) => x !== r); tLookup(r.code); } }));
     main.querySelectorAll(".trow").forEach((row) => {
-      let sx = 0, sy = 0, moved = false;
-      row.addEventListener("touchstart", (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; moved = false; row.style.transition = "none"; }, { passive: true });
-      row.addEventListener("touchmove", (e) => {
-        const t = e.touches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-        if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) { moved = true; row.style.transform = "translateX(" + dx + "px)"; row.classList.toggle("swR", dx > 70); row.classList.toggle("swL", dx < -70); }
-      }, { passive: true });
-      row.addEventListener("touchend", (e) => {
-        const t = e.changedTouches[0], dx = t.clientX - sx;
-        row.style.transition = ""; row.style.transform = ""; row.classList.remove("swR", "swL");
-        if (!moved) return;
+      // スワイプ：指でもマウスでも動く（pointerイベント）。横に90px以上動かしたら、右＝仕入れ／左＝消す
+      let sx = 0, sy = 0, moved = false, pid = null, horiz = false;
+      const reset = () => { row.style.transition = ""; row.style.transform = ""; row.classList.remove("swR", "swL"); pid = null; horiz = false; };
+      row.addEventListener("pointerdown", (e) => { if (e.button > 0) return; pid = e.pointerId; sx = e.clientX; sy = e.clientY; moved = false; horiz = false; row.style.transition = "none"; });
+      row.addEventListener("pointermove", (e) => {
+        if (pid !== e.pointerId) return;
+        const dx = e.clientX - sx, dy = e.clientY - sy;
+        if (!horiz && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.3) { horiz = true; moved = true; try { row.setPointerCapture(pid); } catch (x) {} }
+        if (horiz) { row.style.transform = "translateX(" + dx + "px)"; row.classList.toggle("swR", dx > 90); row.classList.toggle("swL", dx < -90); }
+      });
+      row.addEventListener("pointerup", (e) => {
+        if (pid !== e.pointerId) return;
+        const dx = e.clientX - sx, was = horiz;
+        reset();
+        if (!was) return;
         const r = TLIST.find((x) => x.id === row.dataset.id);
         if (!r) return;
         if (dx > 90 && !r.err && !r.wait) openTBuy(r);
         else if (dx < -90) { TLIST = TLIST.filter((x) => x !== r); saveTlist(); showTan(); }
       });
+      row.addEventListener("pointercancel", reset);
       row.addEventListener("click", () => { if (moved) return; const r = TLIST.find((x) => x.id === row.dataset.id); if (r && !r.err && !r.wait) showTDet(r.id); });
     });
   }
