@@ -243,6 +243,11 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .ofr { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid var(--line); }
 .cbtns button { font-size: 13px; padding: 6px 9px; }
 h2.sec { font-size: 15px; margin: 6px 0 0; }
+.favmark { color: #e0a800; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); white-space: nowrap; background: #333; color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 14px; z-index: 30; }
+.kg { display: block; border: 1px solid var(--line); background: #fff; object-fit: contain; }
+.bigg .kg, .bigg .tg { width: 100%; height: auto; }
+.tdg .kg { max-width: 100%; height: auto; }
 .cbtns button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 .sheet input.small { font-size: 16px; width: 6em; padding: 6px 8px; }
 .sheet input.small.wide, .callout input.small.wide { width: 100%; text-align: left; }
@@ -747,7 +752,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const m = new Map(server);
     localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
     pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
-    return [...m.values()].filter((e) => e && e.id && e.kind !== "t");
+    return [...m.values()].filter((e) => e && e.id && !e.kind);
   }
   // 単品の仕入れ（セットの記入と同じ保存場所に、kind:"t" を付けて入れる）
   function allT() {
@@ -755,6 +760,13 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
     pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
     return [...m.values()].filter((e) => e && e.id && e.kind === "t");
+  }
+  // 単品のお気に入り（仕入れないけど、セールの日などにまた見たい本。kind:"f"）
+  function allF() {
+    const m = new Map(server);
+    localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
+    pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
+    return [...m.values()].filter((e) => e && e.id && e.kind === "f");
   }
   const cellKey = (sh, gc, oc, v) => sh + "|" + gc + "|" + oc + "|" + v;
   // マスごとの記入（一番新しいもの）。記入が変わったら作り直す
@@ -810,9 +822,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     entCache = null;
     if (op.op === "set") localOnly.set(op.id, op.data); else localOnly.delete(op.id);
     saveLocal();
+    if (API) queueOp(Object.assign({ c: "purchases" }, op));   // 先に送る順番に入れる（消したものが画面に残らないように）
     updatePurchBtn();
     rerender();
-    if (API) queueOp(Object.assign({ c: "purchases" }, op));
   }
   function rerender() {
     if (curView.type === "set") showSet(curView.si, curView.vi, curView.fromScan, true);
@@ -823,6 +835,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     else if (curView.type === "tpur") showTPur(true);
     else if (curView.type === "tsrch") showTSrch();
     else if (curView.type === "tdet") showTDet(curView.id);
+    else if (curView.type === "tfav") showTFav();
   }
   function updatePurchBtn() {
     const all = allEntries().filter((e) => !e.done);
@@ -1281,7 +1294,27 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   let tShop = "";
   try { const s = JSON.parse(localStorage.getItem("sc_tshop") || "null"); if (s && s.d === today()) tShop = s.n || ""; } catch (e) {}
   const saveShop = (n) => { tShop = n; try { localStorage.setItem("sc_tshop", JSON.stringify({ d: today(), n })); } catch (e) {} };
-  const isTView = () => curView.type === "tan" || curView.type === "tdet" || curView.type === "tsrch";
+  const isTView = () => curView.type === "tan" || curView.type === "tdet" || curView.type === "tsrch" || curView.type === "tfav";
+  const favId = (asin) => "f_" + asin;
+  const isFav = (asin) => allF().some((f) => f.a === asin);
+  function addFav(r) {
+    const snap = Object.assign({}, r); delete snap.offers;
+    change({ op: "set", id: favId(r.asin), data: { kind: "f", id: favId(r.asin), at: new Date().toISOString(), d: today(), a: r.asin, j: r.jan || "", t: r.t || "", shop: tShop, snap } });
+  }
+  function delFav(asin) { change({ op: "delete", id: favId(asin) }); }
+  function toggleFav(r) { if (isFav(r.asin)) { delFav(r.asin); tToast("☆ お気に入りから外しました"); } else { addFav(r); tToast("★ お気に入りに入れました"); } }
+  // Keepaのグラフ画像（ランキング・新品・中古・Amazon、過去1年）
+  const kGraph = (asin, w, h) => "https://api.keepa.com/graphimage?key=" + encodeURIComponent(KK) + "&domain=5&asin=" + asin + "&salesrank=1&new=1&used=1&amazon=1&range=365&width=" + w + "&height=" + h;
+  function graphBox(r, w, h, iw, ih) {
+    const svg = graphSvg(r.g, w, h);
+    if (!KK || !r.asin || !navigator.onLine) return svg;
+    return '<img class="kg" src="' + esc(kGraph(r.asin, iw, ih)) + '" width="' + w + '" height="' + h + '" alt="Keepaのグラフ" onerror="this.outerHTML=this.nextElementSibling.innerHTML"><template>' + svg + "</template>";
+  }
+  function showGraph(r) {
+    sheet.innerHTML = '<div class="st">' + esc(r.t) + '</div><div class="bigg">' + graphBox(r, 340, 220, 900, 580) + '</div><div class="note">Keepaのグラフ（過去1年）。緑＝ランキング</div><div class="row"><button type="button" id="edClose">閉じる</button><a class="btn" href="https://keepa.com/#!product/5-' + esc(r.asin) + '" target="_blank" rel="noopener">Keepaで開く</a></div>';
+    sheet.hidden = false;
+    $("edClose").addEventListener("click", closeEditor);
+  }
 
   // ---------- Keepa ----------
   const kTime = (t) => (t + 21564000) * 60000;
@@ -1383,8 +1416,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const np = profitOf(r, r.newP), up = profitOf(r, r.usedP), nt = targetOf(r, r.newP), ut = targetOf(r, r.usedP);
     const pre = TSET.alert && isPre(r), bought = allT().some((e) => e.a === r.asin && e.d === today());
     return '<div class="trow' + (pre ? " tpre" : "") + '" data-id="' + esc(r.id) + '">' +
-      '<div class="tl">' + (r.img ? '<img src="' + esc(r.img) + '" alt="" loading="lazy">' : '<div class="noimg">画像なし</div>') + (pre ? '<div class="pretag">プレ値</div>' : "") + graphSvg(r.g, 112, 60) + "</div>" +
-      '<div class="tr"><div class="tt">' + (bought ? '<span class="pill done">仕入れ済</span> ' : "") + esc(r.t || "（書名なし）") + "</div>" +
+      '<div class="tl">' + (r.img ? '<img src="' + esc(r.img) + '" alt="" loading="lazy">' : '<div class="noimg">画像なし</div>') + (pre ? '<div class="pretag">プレ値</div>' : "") + graphBox(r, 112, 64, 300, 170) + "</div>" +
+      '<div class="tr"><div class="tt">' + (bought ? '<span class="pill done">仕入れ済</span> ' : "") + (r.asin && isFav(r.asin) ? '<span class="favmark">★</span> ' : "") + esc(r.t || "（書名なし）") + "</div>" +
       '<div class="tcols num"><div>' +
         "JAN " + esc(r.jan || "-") + "<br>" + esc(r.bind || "") + "<br>" +
         "順位: <b class=\"red\">" + ynum(r.rank) + "</b> 位<br>" +
@@ -1407,9 +1440,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     curView = { type: "tan" };
     let h = "";
     if (!KK) h += '<div class="callout"><b>Keepaのキーが入っていません</b><div class="note">下の「⚙ 設定」を押して、KeepaのAPIアクセスキー（アマサーチのKeepa設定にあるものと同じ）を貼ってください。</div></div>';
-    h += '<div class="tbar"><span class="tshop">今日の店名 <input id="tShopIn" type="text" value="' + esc(tShop) + '" placeholder="例：滋賀" aria-label="今日の店名"></span><span class="note">右へスワイプ＝仕入れ／左へスワイプ＝消す</span>' +
+    h += '<div class="tbar"><span class="tshop">今日の店名 <input id="tShopIn" type="text" value="' + esc(tShop) + '" placeholder="例：滋賀" aria-label="今日の店名"></span><span class="note">押す＝詳しく・仕入れ／右へスワイプ＝お気に入り／左へスワイプ＝グラフを大きく</span>' +
       '<span class="note num">' + (tokensLeft != null ? "Keepa残り " + tokensLeft + "トークン" : "") + "</span>" +
-      '<span class="tbtns"><button id="tPurBtn" type="button">仕入れ一覧' + (tCountTodo() ? "（単品 " + tCountTodo() + "）" : "") + '</button><button id="tSetBtn" type="button">⚙ 設定</button></span></div>';
+      '<span class="tbtns"><button id="tFavBtn" type="button">★ お気に入り' + (allF().length ? "（" + allF().length + "）" : "") + '</button><button id="tPurBtn" type="button">仕入れ一覧' + (tCountTodo() ? "（単品 " + tCountTodo() + "）" : "") + '</button><button id="tSetBtn" type="button">⚙ 設定</button></span></div>';
     if (!TLIST.length) h += '<div class="empty"><b>本のバーコードを読んでください</b><div class="note">Keepaで今の値段・ランキングを調べて、上に積んでいきます（1冊で1トークンほど）。電波がないと調べられません。</div></div>';
     h += '<div class="tlist">' + TLIST.map(tRowHtml).join("") + "</div>";
     if (TLIST.length) h += '<div class="actions"><button id="tClear" type="button">一覧を全部消す（' + TLIST.length + "件）</button></div>";
@@ -1420,6 +1453,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
   function bindTan() {
     $("tSetBtn").addEventListener("click", showTSet);
+    $("tFavBtn").addEventListener("click", showTFav);
     const si = $("tShopIn");
     si.addEventListener("change", () => saveShop(String(si.value || "").trim()));
     si.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); si.blur(); refocus(); } });
@@ -1429,6 +1463,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       if (tc.dataset.c !== "1") { tc.dataset.c = "1"; tc.textContent = "本当に全部消す（" + TLIST.length + "件）"; return; }
       TLIST = []; saveTlist(); showTan();
     });
+    bindTanRows();
+  }
+  function bindTanRows() {
     main.querySelectorAll(".tretry").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); const r = TLIST.find((x) => x.id === b.dataset.id); if (r) { TLIST = TLIST.filter((x) => x !== r); tLookup(r.code); } }));
     main.querySelectorAll(".trow").forEach((row) => {
       // スワイプ：指でもマウスでも動く（pointerイベント）。横に90px以上動かしたら、右＝仕入れ／左＝消す
@@ -1446,13 +1483,18 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         const dx = e.clientX - sx, was = horiz;
         reset();
         if (!was) return;
-        const r = TLIST.find((x) => x.id === row.dataset.id);
+        const r = TLIST.find((x) => x.id === row.dataset.id) || (curView.type === "tfav" ? (allF().find((x) => favId(x.a) === row.dataset.id) || {}).snap : null);
         if (!r) return;
-        if (dx > 90 && !r.err && !r.wait) openTBuy(r);
-        else if (dx < -90) { TLIST = TLIST.filter((x) => x !== r); saveTlist(); showTan(); }
+        if (r.err || r.wait) { if (Math.abs(dx) > 90) { TLIST = TLIST.filter((x) => x !== r); saveTlist(); showTan(); } return; }   // 調べられなかった行は消す
+        if (dx > 90) toggleFav(r);          // 右＝お気に入りに入れる（入っていれば外す）
+        else if (dx < -90) showGraph(r);    // 左＝グラフを大きく
       });
       row.addEventListener("pointercancel", reset);
-      row.addEventListener("click", () => { if (moved) return; const r = TLIST.find((x) => x.id === row.dataset.id); if (r && !r.err && !r.wait) showTDet(r.id); });
+      row.addEventListener("click", () => {
+        if (moved) return;
+        if (curView.type === "tfav") { const f = allF().find((x) => favId(x.a) === row.dataset.id); if (f) tLookup(f.a); return; }   // お気に入りを押したら、今の値段で調べ直す（1トークン）
+        const r = TLIST.find((x) => x.id === row.dataset.id); if (r && !r.err && !r.wait) showTDet(r.id);
+      });
     });
   }
 
@@ -1490,6 +1532,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     tBusy--;
     const i = TLIST.findIndex((x) => x.id === r0.id);
     if (i >= 0) TLIST[i] = r; else TLIST.unshift(r);
+    if (!r.err) { const f = allF().find((x) => x.a === r.asin); if (f) change({ op: "set", id: f.id, data: Object.assign({}, f, { snap: Object.assign({}, r), t: r.t }) }); }   // お気に入りの中身も今の値段に
     saveTlist();
     if (curView.type === "tan") showTan();
     if (!r.err) tSignal(r);
@@ -1506,6 +1549,26 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     } catch (e) {}
   }
 
+
+  // ---------- お気に入り（スマホ2台とパソコンで同じものが見える） ----------
+  function showTFav() {
+    curView = { type: "tfav" };
+    const fs = allF().sort((a, b) => (a.at < b.at ? 1 : -1));
+    let h = '<div class="tbar"><b>★ お気に入り（' + fs.length + "冊）</b>" + '<span class="note">押す＝今の値段で調べ直す（1トークン）／右へスワイプ＝お気に入りから外す／左へスワイプ＝グラフを大きく</span></div>';
+    if (!fs.length) h += '<div class="empty"><b>お気に入りはまだありません</b><div class="note">読んだ本を右へスワイプすると、ここに入ります。セールの日に来たら利益が出そうな本などを入れておけます。</div></div>';
+    else h += '<div class="tlist">' + fs.map((f) => tRowHtml(Object.assign({}, f.snap || { asin: f.a, t: f.t, jan: f.j }, { id: favId(f.a), at: (f.snap && f.snap.at) || f.at }))).join("") + "</div>";
+    main.innerHTML = h;
+    bindTanRows();
+    updateTanBtn();
+    refocus();
+  }
+  let toastT = null;
+  function tToast(t) {
+    let el = $("tToast");
+    if (!el) { el = document.createElement("div"); el.id = "tToast"; el.className = "toast"; document.body.appendChild(el); }
+    el.textContent = t; el.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 1600);
+  }
   // ---------- 本を押したときの詳しい画面 ----------
   function linkBtns(r) {
     const t = encodeURIComponent(r.t || ""), code = encodeURIComponent(r.jan || r.asin);
@@ -1524,7 +1587,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     curView = { type: "tdet", id };
     const np = profitOf(r, r.newP), up = profitOf(r, r.usedP);
     let h = '<section class="head"><h1>' + esc(r.t) + '</h1><div class="note num">ASIN ' + esc(r.asin) + "　JAN " + esc(r.jan || "-") + "　" + esc(r.bind) + "</div>" +
-      '<div class="tdg">' + (r.img ? '<img src="' + esc(r.img) + '" alt="">' : "") + graphSvg(r.g, 220, 110) + "</div>" +
+      '<div class="tdg">' + (r.img ? '<img src="' + esc(r.img) + '" alt="">' : "") + graphBox(r, 300, 180, 900, 540) + "</div>" +
       '<table class="tdt num"><tr><th>順位</th><td>' + ynum(r.rank) + " 位</td></tr>" +
       "<tr><th>新品最安値" + (r.newL ? "（" + esc(r.newL) + "）" : "") + "</th><td>" + ynum(r.newP) + " 円</td></tr>" +
       '<tr><th>　粗利益</th><td class="' + rcls(np) + '">' + ynum(np) + " 円</td></tr><tr><th>　目標利益達成額</th><td>" + ynum(targetOf(r, r.newP)) + " 円</td></tr>" +
@@ -1533,11 +1596,12 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       "<tr><th>参考価格</th><td>" + ynum(r.list) + " 円</td></tr><tr><th>カート</th><td>" + ynum(r.cart) + " 円</td></tr>" +
       "<tr><th>出品者数</th><td>新品 " + ynum(r.cntN) + "・中古 " + ynum(r.cntU) + "</td></tr>" +
       '<tr><th>手数料</th><td class="note">紹介料' + (r.ref || 15) + "%＋140円" + (TSET.fba ? "＋FBA " + ynum(r.ppf) + "円" : "") + "</td></tr></table>" +
-      '<div class="actions"><button id="tdBuy" class="btn-primary" type="button">仕入れる</button><button id="tdOff" type="button">出品価格を見る（数トークン）</button><button id="tdDel" type="button">一覧から消す</button></div>' +
+      '<div class="actions"><button id="tdBuy" class="btn-primary" type="button">仕入れる</button><button id="tdOff" type="button">出品価格を見る（数トークン）</button><button id="tdFav" type="button">' + (isFav(r.asin) ? "★ お気に入りから外す" : "☆ お気に入りに入れる") + '</button><button id="tdDel" type="button">一覧から消す</button></div>' +
       '<div id="tdOffers"></div>' + linkBtns(r) + "</section>";
     main.innerHTML = h;
     $("tdBuy").addEventListener("click", () => openTBuy(r));
     $("tdDel").addEventListener("click", () => { TLIST = TLIST.filter((x) => x !== r); saveTlist(); showTan(); });
+    $("tdFav").addEventListener("click", () => { toggleFav(r); showTDet(r.id); });
     $("tdOff").addEventListener("click", () => loadOffers(r));
     if (r.offers) renderOffers(r);
     window.scrollTo(0, 0);
@@ -1827,7 +1891,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   showList = function () { const r = _list.apply(this, arguments); navRecord(); return r; };
   showSet = function () { const r = _set.apply(this, arguments); navRecord(); return r; };
   showPurch = function () { const r = _purch.apply(this, arguments); navRecord(); return r; };
-  const _tan = showTan, _tdet = showTDet, _tpur = showTPur, _tsrch = showTSrch;
+  const _tan = showTan, _tdet = showTDet, _tpur = showTPur, _tsrch = showTSrch, _tfav = showTFav;
+  showTFav = function () { const r = _tfav.apply(this, arguments); navRecord(); return r; };
   showTSrch = function () { const r = _tsrch.apply(this, arguments); navRecord(); return r; };
   showTan = function () { const r = _tan.apply(this, arguments); navRecord(); return r; };
   showTDet = function () { const r = _tdet.apply(this, arguments); navRecord(); return r; };
@@ -1851,6 +1916,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       else if (v.type === "tdet") showTDet(v.id);
       else if (v.type === "tpur") showTPur(false);
       else if (v.type === "tsrch") showTSrch();
+      else if (v.type === "tfav") showTFav();
       else showHome();
       const y = st.y || 0;
       setTimeout(() => window.scrollTo(0, y), 0);
