@@ -244,6 +244,9 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .ofr { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid var(--line); }
 .cbtns button { font-size: 13px; padding: 6px 9px; }
 h2.sec { font-size: 15px; margin: 6px 0 0; }
+.tagline { font-size: 13px; background: #fff4c2; color: #1d2530; border-radius: 6px; padding: 2px 6px; }
+.tagline b { color: var(--good); font-size: 15px; }
+.tagline b.minus { color: var(--bad); }
 .cbtns .dcb { padding: 5px 8px; }
 .cbtns .dcb.on { background: var(--good); border-color: var(--good); color: #fff; font-weight: 700; }
 .tbpf { font-size: 15px; }
@@ -1192,7 +1195,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     e.preventDefault();
     const v = q.value;
     if (!v.trim()) return;
-    if (isTView()) tLookup(v); else search(v);
+    if (bookoffTag(v)) onTag(bookoffTag(v)); else if (isTView()) tLookup(v); else search(v);
     q.value = "";
     q.placeholder = "前回：" + v.trim() + "　／次のバーコードを読む";
     // 画面のキーボードだけ下げる。欄は選んだままなので、バーコードリーダーはそのまま入る
@@ -1519,6 +1522,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         '粗利益: <b class="red big' + rcls(up) + '">' + ynum(up) + "</b> 円<br>" +
         '目標額: <b class="red' + rcls(ut) + '">' + ynum(ut) + "</b>円" +
       "</div></div>" +
+      (r.tag ? '<div class="tagline num">値札 ' + yen(r.tag) + "円 → 中古で売れたら利益 <b class=\"" + (r.usedP && profitOf(r, r.usedP) - r.tag < 0 ? "minus" : "") + "\">" + (r.usedP ? yen(profitOf(r, r.usedP) - r.tag) + "円" : "-") + "</b></div>" : "") +
       '<div class="note num">検索日: ' + esc(fmtDT(r.at)) + "</div></div></div>";
   }
   const fmtDT = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
@@ -1620,6 +1624,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       if (e instanceof TypeError) r.err = navigator.onLine ? "Keepaにつながりませんでした" : "電波がないため調べられませんでした";
     }
     tBusy--;
+    if (!r.err) takePendTag(r);
     const i = TLIST.findIndex((x) => x.id === r0.id);
     if (i >= 0) TLIST[i] = r; else TLIST.unshift(r);
     if (!r.err) { const f = allF().find((x) => x.a === r.asin); if (f) change({ op: "set", id: f.id, data: Object.assign({}, f, { snap: Object.assign({}, r), t: r.t }) }); }   // お気に入りの中身も今の値段に
@@ -1658,6 +1663,33 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (!el) { el = document.createElement("div"); el.id = "tToast"; el.className = "toast"; document.body.appendChild(el); }
     el.textContent = t; el.hidden = false;
     clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 1600);
+  }
+
+  // ---------- ブックオフの値札（バーコードに値札の値段が入っている：10けたの番号＋7けたの値段） ----------
+  //   例：00189578550000370 → 370円。値下げシールの値段は入っていない
+  function bookoffTag(v) {
+    const t = String(v || "").normalize("NFKC").replace(/\s/g, "");
+    if (!/^\d{17}$/.test(t)) return null;
+    const p = parseInt(t.slice(10), 10);
+    return p > 0 && p < 1000000 ? { code: t, p } : null;
+  }
+  let pendTag = null;   // 本より先に値札を読んだとき、次の本に付ける
+  function onTag(tg) {
+    // 値段を入れる画面が開いていれば、そこに入れる（セット本の画面でも）
+    const pi = $("price");
+    if (pi && !sheet.hidden) { pi.value = String(tg.p); pi.dispatchEvent(new Event("input")); tToast("値札 " + yen(tg.p) + "円を入れました"); return; }
+    if (!isTView()) { tToast("ブックオフの値札：" + yen(tg.p) + "円"); return; }
+    const r = TLIST[0];
+    const fresh = r && !r.err && !r.wait && Date.now() - new Date(r.at).getTime() < 3 * 60000 && !r.tag;
+    if (fresh) { r.tag = tg.p; saveTlist(); if (curView.type === "tan") showTan(); tToast("値札 " + yen(tg.p) + "円 → " + (r.t || "").slice(0, 16)); tSpeakTag(r); }
+    else { pendTag = { p: tg.p, at: Date.now() }; tToast("値札 " + yen(tg.p) + "円（次に読んだ本に付けます）"); }
+  }
+  function takePendTag(r) {
+    if (pendTag && Date.now() - pendTag.at < 3 * 60000 && !r.tag) { r.tag = pendTag.p; pendTag = null; }
+  }
+  function tSpeakTag(r) {
+    if (!TSET.voice || !window.speechSynthesis || !r.usedP) return;
+    try { const pf = profitOf(r, r.usedP) - r.tag; const u = new SpeechSynthesisUtterance(pf < 0 ? "マイナス" + Math.abs(pf) : String(pf)); u.lang = "ja-JP"; u.rate = 1.5; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {}
   }
   // ---------- 本を押したときの詳しい画面 ----------
   function linkBtns(r) {
@@ -1740,7 +1772,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         '<span id="tbSz" class="note"></span></div>' +
       '<div class="row cbtns"><span class="note">割引</span>' + DCS.map((x) => '<button type="button" class="dcb" data-dc="' + x + '">' + (x ? Math.round(x * 100) + "%" : "なし") + "</button>").join("") + "</div>" +
       '<div class="row"><span class="note">売値</span><input id="tbSp" class="small" type="text" inputmode="numeric" value="' + (ent ? ent.sp || "" : spOf(cond)) + '" aria-label="販売予定価格"><span class="note">円</span>' +
-        '<span class="note">仕入れ値</span><input id="price" class="small" type="text" inputmode="tel" autocomplete="off" placeholder="空なら0" value="' + (ent ? ent.p : "") + '" aria-label="仕入れ値（値札の値段）"><span class="note">円</span></div>' +
+        '<span class="note">仕入れ値</span><input id="price" class="small" type="text" inputmode="tel" autocomplete="off" placeholder="空なら0" value="' + (ent ? ent.p : r.tag || "") + '" aria-label="仕入れ値（値札の値段）"><span class="note">円</span></div>' +
       '<div class="note">仕入れ値は値札の値段を入れる（割引は上のボタンで引く）。「5000*0.8」のような計算も入れられる</div>' +
       '<div class="row"><input id="tbCom" class="small wide" type="text" placeholder="コメント（101・上限・付属品・到着したとき確認 など）" value="' + esc(ent ? ent.com : "") + '"></div>' +
       '<div id="tbPf" class="tbpf num"></div>' +
@@ -1979,7 +2011,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (c === camLast.c && now - camLast.t < 3000) { camLast.t = now; return; }   // 同じバーコードを写したままのときは1回だけ
     camLast = { c, t: now };
     const isBook = /^(97[89]\d{10}|4[59]\d{11})$/.test(c) || /^\d{9}[\dX]$/.test(c);
-    if (!isBook) { camMsg("読んだ：" + c + "（本のバーコードではありません）"); return; }
+    if (!isBook && !bookoffTag(c)) { camMsg("読んだ：" + c + "（本のバーコードではありません）"); return; }
     try { navigator.vibrate && navigator.vibrate(60); } catch (e) {}
     camMsg("読んだ：" + c);
     closeEditor();
