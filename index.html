@@ -1175,6 +1175,35 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     q.blur();
     setTimeout(refocus, 60);
   });
+  // バーコードリーダー：検索欄が選ばれていなくても、読んだバーコードは検索欄に入れて探す（アマサーチと同じ）
+  //   リーダーは「とても速い打ち込み＋Enter」なので、その速さで見分ける。人がゆっくり打った字はそのまま
+  (function () {
+    let buf = "", last = 0, startVal = null, startEl = null;
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      const el = document.activeElement;
+      if (el === q) { buf = ""; return; }   // 検索欄ならいつもどおり
+      const now = Date.now();
+      if (now - last > 80) { buf = ""; startEl = el; startVal = el && "value" in el ? el.value : null; }
+      last = now;
+      if (e.key === "Enter") {
+        const code = buf;
+        buf = "";
+        if (code.length >= 8 && /^[0-9A-Za-z\-]+$/.test(code)) {
+          e.preventDefault(); e.stopPropagation();
+          if (startEl && startVal != null && "value" in startEl) startEl.value = startVal;   // 値段の欄などに入ってしまった分は戻す
+          closeEditor();
+          q.value = code;
+          $("f").requestSubmit();
+        }
+        return;
+      }
+      if (e.key && e.key.length === 1) {
+        buf += e.key;
+        if (!el || el === document.body || !("value" in el)) e.preventDefault();   // どこも選んでいないときは、画面がスクロールなどしないように
+      }
+    }, true);
+  })();
   // 履歴（トップ画面）にもどる
   $("homeBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; showHome(); window.scrollTo(0, 0); try { updateTanBtn(); } catch (e) {} });
   // 検索欄を指で押したときは、キーボードを出す（書名を打つとき）
