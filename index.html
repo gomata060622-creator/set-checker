@@ -1937,7 +1937,28 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   loadAuthor();
   useData(SAMPLE);
   showHome();
-  if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); } catch (e) {} }
+  // 新しい版が届いたら自動で入れ替えて開き直す（値段を入れている途中・カメラを使っている途中は、終わるまで待つ）
+  if ("serviceWorker" in navigator) {
+    try {
+      const hadCtl = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.register("sw.js").then((reg) => {
+        const chk = () => { try { reg.update(); } catch (e) {} };
+        setInterval(chk, 30 * 60000);
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) chk(); });
+      }).catch(() => {});
+      let reloading = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!hadCtl || reloading) return;   // 初めて開いたときは開き直さない
+        reloading = true;
+        const go = () => {
+          const busy = (sheet && !sheet.hidden) || (typeof camStream !== "undefined" && camStream) || tBusy > 0;
+          if (busy) { setTimeout(go, 2000); return; }
+          location.reload();
+        };
+        go();
+      });
+    } catch (e) {}
+  }
   loadData().then((obj) => {
     if (obj && Array.isArray(obj.sets)) { useData(obj); showHome(); }
   });
