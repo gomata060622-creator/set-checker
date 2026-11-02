@@ -254,6 +254,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
 .bigg .kg, .bigg .tg { width: 100%; height: auto; }
 .tdg .kg { max-width: 100%; height: auto; }
 .cbtns button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.cbtns button.colle { border-color: #b8860b; color: #8a5a00; }
+.cbtns button.colle.on { background: #b8860b; border-color: #b8860b; color: #fff; }
 .sheet input.small { font-size: 16px; width: 6em; padding: 6px 8px; }
 .sheet input.small.wide, .callout input.small.wide { width: 100%; text-align: left; }
 .callout input.small { font: inherit; width: 8em; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
@@ -1674,7 +1676,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
 
   // ---------- 仕入れる（値段・コンディション・発送方法） ----------
-  const CONDS = [["新品", "新品"], ["ほぼ新品", "中古(ほぼ新品)"], ["非常に良い", "中古(非常に良い)"], ["良い", "中古(良い)"], ["可", "中古(可)"], ["コレクター", "コレクター商品(良い)"]];
+  const CONDS = [["新品", "新品"], ["ほぼ新品", "中古(ほぼ新品)"], ["非常に良い", "中古(非常に良い)"], ["良い", "中古(良い)"], ["可", "中古(可)"],
+    ["コレ ほぼ新品", "コレクター商品(ほぼ新品)"], ["コレ 非常に良い", "コレクター商品(非常に良い)"], ["コレ 良い", "コレクター商品(良い)"], ["コレ 可", "コレクター商品(可)"]];
   function openTBuy(r, ent) {
     let cond = ent ? ent.cond : "中古(良い)", ship = ent ? ent.ship : TSET.fba ? "FBA" : "自己発送";
     const spOf = (c) => (c === "新品" ? r.newP : r.usedP) || "";
@@ -1682,10 +1685,11 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       '<div class="st">' + esc(r.t) + "</div>" +
       '<div class="sv num">中古 ' + ynum(r.usedP) + "円・粗利益 " + ynum(profitOf(r, r.usedP)) + "円・目標額 " + ynum(targetOf(r, r.usedP)) + "円" + (discR > 0 ? '　<span class="dctag" style="font-size:12px">割引' + pctTxt(discR) + "</span>" : "") + "</div>" +
       '<div class="quick" aria-label="押すとその値段を仕入れ値に入れる（値札の値段）">' + quickPrices().map((p) => '<button type="button" class="num" data-qp="' + p + '">' + yen(p) + "</button>").join("") + "</div>" +
-      '<div class="row cbtns">' + CONDS.map((c) => '<button type="button" data-cd="' + c[1] + '"' + (c[1] === cond ? ' class="on"' : "") + ">" + c[0] + "</button>").join("") + "</div>" +
+      '<div class="row cbtns">' + CONDS.slice(0, 5).map((c) => '<button type="button" data-cd="' + c[1] + '"' + (c[1] === cond ? ' class="on"' : "") + ">" + c[0] + "</button>").join("") + "</div>" +
+      '<div class="row cbtns">' + CONDS.slice(5).map((c) => '<button type="button" class="colle' + (c[1] === cond ? " on" : "") + '" data-cd="' + c[1] + '">' + c[0] + "</button>").join("") + "</div>" +
       '<div class="row cbtns"><button type="button" data-sh="FBA"' + (ship === "FBA" ? ' class="on"' : "") + '>FBA</button><button type="button" data-sh="自己発送"' + (ship === "自己発送" ? ' class="on"' : "") + ">自己発送</button>" +
         '<span class="note">売値</span><input id="tbSp" class="small" type="text" inputmode="numeric" value="' + (ent ? ent.sp : spOf(cond)) + '" aria-label="販売予定価格"><span class="note">円</span></div>' +
-      '<div class="row"><input id="tbCom" class="small wide" type="text" placeholder="コメント（101・上限・付属品など）" value="' + esc(ent ? ent.com : "") + '"></div>' +
+      '<div class="row"><input id="tbCom" class="small wide" type="text" placeholder="コメント（101・上限・付属品・到着したとき確認 など）" value="' + esc(ent ? ent.com : "") + '"></div>' +
       '<form id="tbForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="仕入れ値（空なら0円）" value="' + (ent ? ent.p : "") + '" aria-label="仕入れ値（値札の値段）"><span>円</span>' +
       '<button type="submit" class="btn-primary">仕入れ</button>' + (ent ? '<button type="button" id="tbDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
       '<div id="tbPf" class="tbpf num"></div>' +
