@@ -747,7 +747,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const c = JSON.parse(localStorage.getItem("sc_api") || "null");
     if (c && c.u && c.k) { API = c.u; KEY = c.k; }
   } catch (e) {}
-  let syncOk = null, syncAt = null;   // 最後に保存場所とやりとりできたか
+  let syncOk = null, syncAt = null, syncErr = "";   // 最後に保存場所とやりとりできたか
+  const badOps = [];   // 何回送っても送れなかった記入（このスマホの中には残っている）
   const server = new Map();          // id → 記入（保存場所にあるもの）
   let pending = [];                  // まだ保存場所に送れていない変更 [{c, op, id, data}]
   try { pending = JSON.parse(localStorage.getItem("sc_pending") || "[]") || []; } catch (e) { pending = []; }
@@ -813,16 +814,32 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (!API || !pending.length || flushing) return;
     flushing = true;
     const ops = pending.slice();
+    const sent = (list) => {
+      pending = pending.filter((p) => !list.includes(p));
+      list.forEach((o) => { if ((o.c || "purchases") === "purchases") { if (o.op === "set") server.set(o.id, o.data); else server.delete(o.id); } });
+    };
+    const body = (list) => ({ a: "push", ops: list.map((o) => ({ c: o.c || "purchases", op: o.op, id: o.id, data: o.data })) });
     try {
-      await api({ a: "push", ops: ops.map((o) => ({ c: o.c || "purchases", op: o.op, id: o.id, data: o.data })) });
-      pending = pending.filter((p) => !ops.includes(p));
-      ops.forEach((o) => { if ((o.c || "purchases") === "purchases") { if (o.op === "set") server.set(o.id, o.data); else server.delete(o.id); } });
-      savePending();
-      entCache = null;
-      syncOk = true; syncAt = new Date();
+      await api(body(ops));
+      sent(ops);
+      syncOk = true; syncAt = new Date(); syncErr = "";
     } catch (e) {
-      syncOk = false;   // 電波がないなど。あとで送り直す
+      // まとめて送れなかったとき：電波がないなら、あとで送り直す。電波があるのに送れないなら、1件ずつ送り直す
+      //   1件だけ送れないもの（大きすぎるなど）が、ほかの記入まで止めてしまわないように
+      syncOk = false; syncErr = String((e && e.message) || e);
+      if (navigator.onLine && ops.length > 1) {
+        let okN = 0;
+        for (const o of ops) {
+          try { await api(body([o])); sent([o]); okN++; }
+          catch (x) { o.fail = (o.fail || 0) + 1; syncErr = String((x && x.message) || x); if (o.fail >= 3) { pending = pending.filter((p) => p !== o); badOps.push(o); } }
+        }
+        if (okN) { syncOk = true; syncAt = new Date(); }
+      } else if (navigator.onLine && ops.length === 1) {
+        const o = ops[0]; o.fail = (o.fail || 0) + 1; if (o.fail >= 3) { pending = pending.filter((p) => p !== o); badOps.push(o); }
+      }
     }
+    savePending();
+    entCache = null;
     flushing = false;
     updatePurchBtn();
     if (pending.length && syncOk) flush();
@@ -988,8 +1005,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         '<form class="kform" data-id="' + esc(e.id) + '"><input class="kin" type="text" inputmode="numeric" enterkeyhint="next" autocomplete="off" placeholder="金額" aria-label="買った値段"><span>円</span><button type="submit" class="btn-primary">決定</button><span class="err" hidden></span></form></div>';
     });
     h += "</section>";
-    h += '<div class="callout"><div><b>まだExcelに入っていない仕入れ：セット ' + todo.length + "冊・単品 " + ttodo.length + "冊</b>" + (karis.length ? '　<span class="note">（金額が仮の ' + karis.length + "冊は、金額を入れるまでExcel用に入りません）</span>" : "") + (pending.length ? '　<span class="note">（送れていない記入 ' + pending.length + "件。電波が入ると送ります）</span>" : "") + "</div>" +
-      '<div class="note">' + (!API ? '<span style="color:var(--bad)">保存場所が設定されていません。最初に送ったリンクから開き直してください（記入はこのスマホの中には残ります）。</span>' : syncOk === false ? "保存場所につながっていません（電波が入ると送ります）" : syncAt ? "保存場所と " + String(syncAt.getHours()).padStart(2, "0") + ":" + String(syncAt.getMinutes()).padStart(2, "0") + " にやりとりしました" : "保存場所につないでいます…") + "</div>" +
+    h += '<div class="callout"><div><b>まだExcelに入っていない仕入れ：セット ' + todo.length + "冊・単品 " + ttodo.length + "冊</b>" + (karis.length ? '　<span class="note">（金額が仮の ' + karis.length + "冊は、金額を入れるまでExcel用に入りません）</span>" : "") + (pending.length ? '　<span class="note">（送れていない記入 ' + pending.length + "件。電波が入ると送ります）</span>" : "") + (badOps.length ? '　<span class="note" style="color:var(--bad)">（送れなかった記入 ' + badOps.length + "件。このスマホには残っています）</span>" : "") + "</div>" +
+      '<div class="note">' + (!API ? '<span style="color:var(--bad)">保存場所が設定されていません。最初に送ったリンクから開き直してください（記入はこのスマホの中には残ります）。</span>' : syncOk === false ? "保存場所につながっていません（電波が入ると送ります）" + (syncErr ? "　理由：" + esc(syncErr) : "") : syncAt ? "保存場所と " + String(syncAt.getHours()).padStart(2, "0") + ":" + String(syncAt.getMinutes()).padStart(2, "0") + " にやりとりしました" : "保存場所につないでいます…") + "</div>" +
       '<div class="note">パソコンでこのページを開いて「Excel用に保存」を押すと、セット本は「スマホ仕入れ_….csv」（セットデータの「スマホの仕入れを書き込む」で書き込む）、単品は「StockList_….csv」（00仕入れリストの仕入予定シートの取り込みボタンで入る）がダウンロードフォルダに入ります。</div>' +
       '<div class="actions"><button id="pSave" class="btn-primary"' + (todo.length || ttodo.length ? "" : " disabled") + ">Excel用に保存（セット " + todo.length + "冊・単品 " + ttodo.length + "冊）</button></div>" +
       (waitIds.length || tWait.length ? '<div>Excelに取り込めたら押してください：<div class="actions" style="margin-top:6px"><button id="pDone">保存した ' + (waitIds.length + tWait.length) + "冊を反映済みにする</button></div></div>" : "") +
@@ -1107,7 +1124,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   async function pull() {
     if (!API) return;
     await flush();
-    if (pending.length) return;   // 送れていないうちは取りにいかない（古いもので上書きしないため）
+    // 送れていない記入があっても受け取る（送れていない分は、画面では上に重ねて出すので消えない）
     try {
       const j = await api({ a: "pull" });
       syncOk = true; syncAt = new Date();
@@ -1136,7 +1153,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         if (curView.type === "home" && DATA && !DATA.sample) showHome(); else rerender();
       }
     } catch (e) {
-      syncOk = false;
+      syncOk = false; syncErr = String((e && e.message) || e);
       updatePurchBtn();
     }
   }
