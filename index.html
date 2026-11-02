@@ -1423,7 +1423,13 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
 
   // ---------- 計算（アマサーチと同じ：目標額＝利益率と最低利益額の両方を満たす仕入れ額） ----------
-  function feeOf(r, price, fba) { return Math.ceil((price * (r.ref || 15)) / 100) + 140 + ((fba == null ? TSET.fba : fba) && r.ppf ? r.ppf : 0); }
+  // 手数料（アマサーチと同じ計算）：販売手数料（売値×紹介料率）＋カテゴリ成約料140円＋その2つにかかる消費税10%＋FBA手数料（FBAのときだけ）
+  function feeParts(r, price, fba) {
+    const sell = Math.round((price * (r.ref || 15)) / 100), cat = 140, tax = Math.round((sell + cat) * 0.1);
+    const f = (fba == null ? TSET.fba : fba) && r.ppf ? r.ppf : 0;
+    return { sell, cat, tax, fba: f, total: sell + cat + tax + f };
+  }
+  function feeOf(r, price, fba) { return feeParts(r, price, fba).total; }
   // サイズで発送方法を決める（00仕入れリストの仕入予定と同じ決め方）
   //   ネコポス（厚さ3.1cmまで・長い辺34cm・3辺60cm・1kgまで）→ 自己発送／それより大きい（クリポ・宅急便）→ FBA
   //   クリポの厚さの上限は、DVD・ブルーレイ・ゲームは3.5cm、本は3.9cm
@@ -1662,7 +1668,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       '<tr><th>　粗利益</th><td class="' + rcls(up) + '">' + ynum(up) + " 円</td></tr><tr><th>　目標利益達成額</th><td>" + ynum(targetOf(r, r.usedP)) + " 円</td></tr>" +
       "<tr><th>参考価格</th><td>" + ynum(r.list) + " 円</td></tr><tr><th>カート</th><td>" + ynum(r.cart) + " 円</td></tr>" +
       "<tr><th>出品者数</th><td>新品 " + ynum(r.cntN) + "・中古 " + ynum(r.cntU) + "</td></tr>" +
-      '<tr><th>手数料</th><td class="note">紹介料' + (r.ref || 15) + "%＋140円" + (TSET.fba ? "＋FBA " + ynum(r.ppf) + "円" : "") + "</td></tr></table>" +
+      '<tr><th>手数料</th><td class="note">販売手数料' + (r.ref || 15) + "%＋カテゴリ成約料140円＋消費税10%" + (TSET.fba ? "＋FBA " + ynum(r.ppf) + "円" : "") + "</td></tr></table>" +
       '<div class="actions"><button id="tdBuy" class="btn-primary" type="button">仕入れる</button><button id="tdOff" type="button">出品価格を見る（数トークン）</button><button id="tdFav" type="button">' + (isFav(r.asin) ? "★ お気に入りから外す" : "☆ お気に入りに入れる") + '</button><button id="tdDel" type="button">一覧から消す</button></div>' +
       '<div id="tdOffers"></div>' + linkBtns(r) + "</section>";
     main.innerHTML = h;
@@ -1751,7 +1757,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const be = need((v) => v - feeOf(r, v, fba) - cost >= 0);
       const tg = need((v) => v - feeOf(r, v, fba) - cost >= Math.max(Math.ceil((v * TSET.rate) / 100), TSET.min));
       box.innerHTML = '見込み利益 <b class="' + (pf < 0 ? "minus" : "") + '">' + yen(pf) + "円</b>" + "（利益率 " + Math.round((pf / spv) * 100) + "%" + (cost > 0 ? "・ROI " + Math.round((pf / cost) * 100) + "%" : "") + "）" +
-        '<div class="note">売値 ' + yen(spv) + " − 手数料 " + yen(fee) + (fba ? "（FBA）" : "（自己発送）") + " − 仕入れ " + yen(cost) + (dc > 0 ? "（" + yen(pv) + "円の" + pctTxt(dc) + "引き）" : "") + "</div>" +
+        '<div class="note">売値 ' + yen(spv) + " − 手数料 " + yen(fee) + " − 仕入れ " + yen(cost) + (dc > 0 ? "（" + yen(pv) + "円の" + pctTxt(dc) + "引き）" : "") + "</div>" +
+        (function () { const f = feeParts(r, spv, fba); return '<div class="note feeb">手数料の内訳：販売手数料(' + (r.ref || 15) + "%) " + yen(f.sell) + "円・カテゴリ成約料 " + yen(f.cat) + "円・消費税 " + yen(f.tax) + "円・FBA手数料 " + yen(f.fba) + "円" + (fba && !r.ppf ? "（KeepaにFBA料金がない本）" : "") + "</div>"; })() +
         '<div class="note">損益分岐販売価格 ' + yen(be) + "円　目標利益達成販売価格 " + yen(tg) + "円</div>";
     };
     inp.addEventListener("input", calc); sp.addEventListener("input", calc);
