@@ -1572,7 +1572,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       '<div class="row cbtns"><button type="button" data-sh="FBA"' + (ship === "FBA" ? ' class="on"' : "") + '>FBA</button><button type="button" data-sh="自己発送"' + (ship === "自己発送" ? ' class="on"' : "") + ">自己発送</button>" +
         '<span class="note">売値</span><input id="tbSp" class="small" type="text" inputmode="numeric" value="' + (ent ? ent.sp : spOf(cond)) + '" aria-label="販売予定価格"><span class="note">円</span></div>' +
       '<div class="row"><input id="tbCom" class="small wide" type="text" placeholder="コメント（101・上限・付属品など）" value="' + esc(ent ? ent.com : "") + '"></div>' +
-      '<form id="tbForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="仕入れ値" value="' + (ent ? ent.p : "") + '" aria-label="仕入れ値（値札の値段）"><span>円</span>' +
+      '<form id="tbForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="仕入れ値（空なら0円）" value="' + (ent ? ent.p : "") + '" aria-label="仕入れ値（値札の値段）"><span>円</span>' +
       '<button type="submit" class="btn-primary">仕入れ</button>' + (ent ? '<button type="button" id="tbDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
       '<div id="edErr" class="err" hidden></div>';
     sheet.hidden = false;
@@ -1588,8 +1588,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (ent) $("tbDel").addEventListener("click", () => { change({ op: "delete", id: ent.id }); closeEditor(); });
     $("tbForm").addEventListener("submit", (e) => {
       e.preventDefault();
-      const p = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10);
-      if (!(p >= 0) || inp.value === "") { const er = $("edErr"); er.textContent = "仕入れ値を数字で入れてください（ポイントで0円なら0）"; er.hidden = false; return; }
+      const p = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10) || 0;   // 空なら0円
       const spv = parseInt(String(sp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10) || 0;
       let com = String($("tbCom").value || "").trim();
       if (cond.indexOf("コレクター") === 0 && !/コレ|これ/.test(com)) com = (com ? com + "、" : "") + "コレクター";
