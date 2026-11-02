@@ -243,6 +243,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .ofr { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid var(--line); }
 .cbtns button { font-size: 13px; padding: 6px 9px; }
 h2.sec { font-size: 15px; margin: 6px 0 0; }
+.prow .pdel { grid-column: 3; justify-self: end; font-size: 12px; padding: 3px 10px; }
 .favmark { color: #e0a800; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); white-space: nowrap; background: #333; color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 14px; z-index: 30; }
 .kg { display: block; border: 1px solid var(--line); background: #fff; object-fit: contain; }
@@ -995,7 +996,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       h += '<section class="day"><h2 class="num"><span>' + esc(d) + "</span><span>" + es.length + "冊・" + yen(sum) + "円</span></h2>";
       es.forEach((e) => {
         h += '<div class="prow" data-id="' + esc(e.id) + '"><div class="pt">' + esc(e.t || "（セット名なし）") + '</div><div class="pp num">' + (e.kari ? "仮 " : "") + yen(e.p) + "円" + (e.dc > 0 ? '<span class="dctag">-' + pctTxt(e.dc) + "</span>" : "") + '</div><span class="pill ' + (e.kari ? "kari" : e.done ? "done" : "todo") + '">' + (e.kari ? "金額が仮" : e.done ? "反映済み" : "未反映") + "</span>" +
-          '<div class="pv num">' + circled(e.oi || 0) + "の列（" + esc(e.oc) + "列）　" + e.v + "巻" + (e.vt ? "　" + esc(e.vt) : "") + "</div></div>";
+          '<div class="pv num">' + circled(e.oi || 0) + "の列（" + esc(e.oc) + "列）　" + e.v + "巻" + (e.vt ? "　" + esc(e.vt) : "") + '</div><button type="button" class="pdel" data-id="' + esc(e.id) + '">消す</button></div>';
       });
       h += "</section>";
     });
@@ -1039,6 +1040,12 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       showPurch(true);
     });
     bindTPurDays();
+    // 「消す」：1回目で「本当に消す」に変わり、もう1回押すと消える（間違えて記入・送ったものを消す）
+    main.querySelectorAll(".pdel").forEach((b) => b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (b.dataset.c !== "1") { b.dataset.c = "1"; b.textContent = "本当に消す"; b.classList.add("btn-danger"); return; }
+      change({ op: "delete", id: b.dataset.id });
+    }));
     const pc = $("pClean");
     if (pc) pc.addEventListener("click", () => {
       if (!confirmClean) { confirmClean = true; showPurch(true); return; }
@@ -1690,7 +1697,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       h += '<section class="day"><h2 class="num"><span>' + esc(d) + "（単品）</span><span>" + es.length + "冊・" + yen(sum) + "円</span></h2>";
       es.forEach((e) => {
         h += '<div class="prow tprow" data-id="' + esc(e.id) + '"><div class="pt">' + esc(e.t || e.a) + '</div><div class="pp num">' + yen(e.p) + "円" + (e.dc > 0 ? '<span class="dctag">-' + pctTxt(e.dc) + "</span>" : "") + '</div><span class="pill ' + (e.done ? "done" : "todo") + '">' + (e.done ? "反映済み" : "未反映") + "</span>" +
-          '<div class="pv num">' + esc(e.cond) + "・" + esc(e.ship) + "・売値 " + (e.sp ? yen(e.sp) + "円" : "未定") + (e.com ? "・" + esc(e.com) : "") + (e.shop ? "・" + esc(e.shop) : "") + "</div></div>";
+          '<div class="pv num">' + esc(e.cond) + "・" + esc(e.ship) + "・売値 " + (e.sp ? yen(e.sp) + "円" : "未定") + (e.com ? "・" + esc(e.com) : "") + (e.shop ? "・" + esc(e.shop) : "") + '</div><button type="button" class="pdel" data-id="' + esc(e.id) + '">消す</button></div>';
       });
       h += "</section>";
     });
