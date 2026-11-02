@@ -244,6 +244,9 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .ofr { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid var(--line); }
 .cbtns button { font-size: 13px; padding: 6px 9px; }
 h2.sec { font-size: 15px; margin: 6px 0 0; }
+.tbpf { font-size: 15px; }
+.tbpf b { font-size: 20px; color: var(--good); }
+.tbpf b.minus { color: var(--bad); }
 .prow .pdel { grid-column: 3; justify-self: end; font-size: 12px; padding: 3px 10px; }
 .favmark { color: #e0a800; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); white-space: nowrap; background: #333; color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 14px; z-index: 30; }
@@ -1678,23 +1681,39 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     sheet.innerHTML =
       '<div class="st">' + esc(r.t) + "</div>" +
       '<div class="sv num">中古 ' + ynum(r.usedP) + "円・粗利益 " + ynum(profitOf(r, r.usedP)) + "円・目標額 " + ynum(targetOf(r, r.usedP)) + "円" + (discR > 0 ? '　<span class="dctag" style="font-size:12px">割引' + pctTxt(discR) + "</span>" : "") + "</div>" +
-      '<div class="quick" aria-label="押すとその値段で仕入れ（値札の値段）">' + quickPrices().map((p) => '<button type="button" class="num" data-qp="' + p + '">' + yen(p) + "</button>").join("") + "</div>" +
+      '<div class="quick" aria-label="押すとその値段を仕入れ値に入れる（値札の値段）">' + quickPrices().map((p) => '<button type="button" class="num" data-qp="' + p + '">' + yen(p) + "</button>").join("") + "</div>" +
       '<div class="row cbtns">' + CONDS.map((c) => '<button type="button" data-cd="' + c[1] + '"' + (c[1] === cond ? ' class="on"' : "") + ">" + c[0] + "</button>").join("") + "</div>" +
       '<div class="row cbtns"><button type="button" data-sh="FBA"' + (ship === "FBA" ? ' class="on"' : "") + '>FBA</button><button type="button" data-sh="自己発送"' + (ship === "自己発送" ? ' class="on"' : "") + ">自己発送</button>" +
         '<span class="note">売値</span><input id="tbSp" class="small" type="text" inputmode="numeric" value="' + (ent ? ent.sp : spOf(cond)) + '" aria-label="販売予定価格"><span class="note">円</span></div>' +
       '<div class="row"><input id="tbCom" class="small wide" type="text" placeholder="コメント（101・上限・付属品など）" value="' + esc(ent ? ent.com : "") + '"></div>' +
       '<form id="tbForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="仕入れ値（空なら0円）" value="' + (ent ? ent.p : "") + '" aria-label="仕入れ値（値札の値段）"><span>円</span>' +
       '<button type="submit" class="btn-primary">仕入れ</button>' + (ent ? '<button type="button" id="tbDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
+      '<div id="tbPf" class="tbpf num"></div>' +
       '<div id="edErr" class="err" hidden></div>';
     sheet.hidden = false;
     const inp = $("price"), sp = $("tbSp");
+    // 見込み利益：売値 − 手数料 − 仕入れ値（割引の日は割引後）。入れるたびに計算し直す
+    const dcNow = ent ? ent.dc || 0 : discR;
+    const calc = () => {
+      const spv = parseInt(String(sp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10) || 0;
+      const pv = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10) || 0;
+      const cost = dcNow > 0 ? Math.floor(pv * (1 - dcNow)) : pv;
+      const box = $("tbPf");
+      if (!spv) { box.innerHTML = "売値が空なので、利益は出せません（このまま仕入れできます）"; return; }
+      const fee = feeOf(r, spv), pf = spv - fee - cost;
+      box.innerHTML = '見込み利益 <b class="' + (pf < 0 ? "minus" : "") + '">' + yen(pf) + "円</b>" + (spv ? "（利益率 " + Math.round((pf / spv) * 100) + "%）" : "") +
+        '<span class="note">　売値 ' + yen(spv) + " − 手数料 " + yen(fee) + " − 仕入れ " + yen(cost) + (dcNow > 0 ? "（" + yen(pv) + "円の" + pctTxt(dcNow) + "引き）" : "") + "</span>";
+    };
+    inp.addEventListener("input", calc); sp.addEventListener("input", calc);
     sheet.querySelectorAll("[data-cd]").forEach((b) => b.addEventListener("click", () => {
       const was = spOf(cond); cond = b.dataset.cd;
       sheet.querySelectorAll("[data-cd]").forEach((x) => x.classList.toggle("on", x === b));
       if (String(sp.value) === String(was) || !sp.value) sp.value = spOf(cond);
     }));
     sheet.querySelectorAll("[data-sh]").forEach((b) => b.addEventListener("click", () => { ship = b.dataset.sh; sheet.querySelectorAll("[data-sh]").forEach((x) => x.classList.toggle("on", x === b)); }));
-    sheet.querySelectorAll("[data-qp]").forEach((b) => b.addEventListener("click", () => { inp.value = b.dataset.qp; $("tbForm").requestSubmit(); }));
+    sheet.querySelectorAll("[data-qp]").forEach((b) => b.addEventListener("click", () => { inp.value = b.dataset.qp; calc(); }));   // 値段のボタンは入れるだけ（利益を見てから「仕入れ」）
+    sheet.querySelectorAll("[data-cd]").forEach((b) => b.addEventListener("click", () => setTimeout(calc, 0)));
+    calc();
     $("edClose").addEventListener("click", closeEditor);
     if (ent) $("tbDel").addEventListener("click", () => { change({ op: "delete", id: ent.id }); closeEditor(); });
     $("tbForm").addEventListener("submit", (e) => {
