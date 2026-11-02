@@ -1471,7 +1471,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
   function profitOf(r, price) { return price ? price - feeOf(r, price) : null; }
   function targetOf(r, price) { const pr = profitOf(r, price); return pr == null ? null : pr - Math.max(Math.ceil((price * TSET.rate) / 100), TSET.min); }
-  function isPre(r) { const up = profitOf(r, r.usedP); return !!(r.list && r.usedP && r.usedL !== "中古" && r.usedP >= r.list && up >= 500); }
+  function isPre(r) { const up = profitOf(r, r.usedP); return !!(r.list && r.usedP && r.usedL && !/^中古|^良い以上なし/.test(r.usedL) && r.usedP >= r.list && up >= 500); }
   const ynum = (v) => (v == null ? "-" : yen(v));
   const rcls = (v) => (v != null && v < 0 ? " minus" : "");
 
@@ -1625,6 +1625,10 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     }
     tBusy--;
     if (!r.err) takePendTag(r);
+    // C：コンディション別の中古の値段がなく、粗利益が最低利益額以上に見える本だけ、出品一覧を取って「良い以上・送料込み」を出す
+    if (!r.err && r.usedL === "中古" && r.usedP && profitOf(r, r.usedP) >= TSET.min) {
+      try { r.offers = await offersOf(r.asin); r.offAt = new Date().toISOString(); usedFromOffers(r); } catch (e) { r.usedL = "中古（送料別・良い以上か不明）"; }
+    } else if (!r.err && r.usedL === "中古") r.usedL = "中古（送料別・良い以上か不明）";
     const i = TLIST.findIndex((x) => x.id === r0.id);
     if (i >= 0) TLIST[i] = r; else TLIST.unshift(r);
     if (!r.err) { const f = allF().find((x) => x.a === r.asin); if (f) change({ op: "set", id: f.id, data: Object.assign({}, f, { snap: Object.assign({}, r), t: r.t }) }); }   // お気に入りの中身も今の値段に
@@ -1702,7 +1706,27 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     ];
     return '<div class="tlinks">' + L.map((x) => '<a class="btn" href="' + esc(x[1]) + '" target="_blank" rel="noopener">' + x[0] + "</a>").join("") + "</div>";
   }
-  const COND_N = { 1: "新品", 2: "ほぼ新品", 3: "非常に良い", 4: "良い", 5: "可", 6: "可", 10: "コレクター", 11: "コレクター", 12: "コレクター", 13: "コレクター" };
+  // Keepaのコンディション番号：1新品 2ほぼ新品 3非常に良い 4良い 5可 6再生品 7〜10コレクター
+  const COND_N = { 1: "新品", 2: "ほぼ新品", 3: "非常に良い", 4: "良い", 5: "可", 6: "再生品", 7: "コレ ほぼ新品", 8: "コレ 非常に良い", 9: "コレ 良い", 10: "コレ 可" };
+  async function offersOf(asin) {
+    const j = await keepa("asin=" + asin + "&offers=20&only-live-offers=1");
+    const p = j.products && j.products[0];
+    const list = [];
+    ((p && p.offers) || []).forEach((o, i) => {
+      if (p.liveOffersOrder && !p.liveOffersOrder.includes(i)) return;
+      const c = o.offerCSV || [];
+      if (c.length < 3) return;
+      list.push({ n: o.condition === 1, k: o.condition, c: COND_N[o.condition] || "中古", fba: !!o.isFBA, amz: !!o.isAmazon, p: c[c.length - 2], s: c[c.length - 1] });
+    });
+    return list;
+  }
+  // 出品一覧から、中古（良い以上・送料込み）の一番安い値段を出す
+  function usedFromOffers(r) {
+    const u = (r.offers || []).filter((o) => o.k >= 2 && o.k <= 4).sort((a, b) => a.p + a.s - (b.p + b.s))[0];
+    if (u) { r.usedP = u.p + u.s; r.usedL = COND_N[u.k] + (u.fba ? "(FBA)" : "") + "・出品一覧"; r.usedShip = u.s; }
+    else if ((r.offers || []).some((o) => o.k === 5)) { r.usedL = "良い以上なし（可だけ）"; }
+    r.usedChk = true;
+  }
   function showTDet(id) {
     const r = TLIST.find((x) => x.id === id);
     if (!r) return showTan();
@@ -1732,16 +1756,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   async function loadOffers(r) {
     const box = $("tdOffers"); box.innerHTML = '<div class="note">Keepaで調べています…</div>';
     try {
-      const j = await keepa("asin=" + r.asin + "&offers=20&only-live-offers=1");
-      const p = j.products && j.products[0];
-      const list = [];
-      ((p && p.offers) || []).forEach((o, i) => {
-        if (p.liveOffersOrder && !p.liveOffersOrder.includes(i)) return;
-        const c = o.offerCSV || [];
-        if (c.length < 3) return;
-        list.push({ n: o.condition === 1, c: COND_N[o.condition] || "中古", fba: !!o.isFBA, amz: !!o.isAmazon, p: c[c.length - 2], s: c[c.length - 1] });
-      });
-      r.offers = list; r.offAt = new Date().toISOString(); saveTlist();
+      r.offers = await offersOf(r.asin); r.offAt = new Date().toISOString(); usedFromOffers(r); saveTlist();
       renderOffers(r);
     } catch (e) { box.innerHTML = '<div class="note" style="color:var(--bad)">' + esc((e && e.message) || "調べられませんでした") + "</div>"; }
   }
