@@ -244,6 +244,8 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .ofr { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid var(--line); }
 .cbtns button { font-size: 13px; padding: 6px 9px; }
 h2.sec { font-size: 15px; margin: 6px 0 0; }
+.cbtns .dcb { padding: 5px 8px; }
+.cbtns .dcb.on { background: var(--good); border-color: var(--good); color: #fff; font-weight: 700; }
 .tbpf { font-size: 15px; }
 .tbpf b { font-size: 20px; color: var(--good); }
 .tbpf b.minus { color: var(--bad); }
@@ -1406,6 +1408,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       cart: pos(cur[18]), newP: nw.v, newL: NEW_LBL[nw.i] || "", usedP: u.v, usedL: u.v != null ? USED_LBL[u.i] || "" : "",
       list: pos(cur[4]) || pos(p.listPrice), amz: pos(cur[0]) != null, ref, ppf, cntN: pos(cur[11]), cntU: pos(cur[12]),
       g: rankHist(p),
+      sz: shipBySize(p),
     };
   }
   async function keepa(params, path) {
@@ -1420,7 +1423,26 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
 
   // ---------- 計算（アマサーチと同じ：目標額＝利益率と最低利益額の両方を満たす仕入れ額） ----------
-  function feeOf(r, price) { return Math.ceil((price * (r.ref || 15)) / 100) + 140 + (TSET.fba && r.ppf ? r.ppf : 0); }
+  function feeOf(r, price, fba) { return Math.ceil((price * (r.ref || 15)) / 100) + 140 + ((fba == null ? TSET.fba : fba) && r.ppf ? r.ppf : 0); }
+  // サイズで発送方法を決める（00仕入れリストの仕入予定と同じ決め方）
+  //   ネコポス（厚さ3.1cmまで・長い辺34cm・3辺60cm・1kgまで）→ 自己発送／それより大きい（クリポ・宅急便）→ FBA
+  //   クリポの厚さの上限は、DVD・ブルーレイ・ゲームは3.5cm、本は3.9cm
+  function shipBySize(p) {
+    const h = p.packageHeight, w = p.packageWidth, l = p.packageLength, g = p.packageWeight;
+    if (!(h > 0 && w > 0 && l > 0)) return null;
+    const d = [h / 10, w / 10, l / 10].sort((a, b) => b - a), longS = d[0], midS = d[1], th = d[2], san = d[0] + d[1] + d[2], kg = g > 0 ? g / 1000 : 0;
+    const t = String(p.title || "").toLowerCase(), media = /dvd|blu-ray|ブルーレイ|ゲーム|game/.test(t) || /DVD|Blu-ray|Video Game/i.test(p.binding || "");
+    const clipo = media ? 35 : 39, thMm = Math.round(th * 10);
+    let size;
+    if (thMm <= 31 && longS <= 34 && san <= 60 && kg <= 1) size = "ネコポス";
+    else if (thMm <= clipo && longS <= 34 && san <= 60 && kg <= 2) size = "クリポ";
+    else if (longS <= 25 && midS <= 20 && th <= 5) size = "宅急便コンパクト";
+    else if (san <= 60 && kg <= 2) size = "60サイズ";
+    else if (san <= 80 && kg <= 5) size = "80サイズ";
+    else if (san <= 100 && kg <= 10) size = "100サイズ";
+    else size = "100サイズ超";
+    return { size, ship: size === "ネコポス" ? "自己発送" : "FBA", txt: d.map((x) => x.toFixed(1)).join("×") + "cm" + (kg ? "・" + Math.round(kg * 1000) + "g" : "") };
+  }
   function profitOf(r, price) { return price ? price - feeOf(r, price) : null; }
   function targetOf(r, price) { const pr = profitOf(r, price); return pr == null ? null : pr - Math.max(Math.ceil((price * TSET.rate) / 100), TSET.min); }
   function isPre(r) { const up = profitOf(r, r.usedP); return !!(r.list && r.usedP && r.usedL !== "中古" && r.usedP >= r.list && up >= 500); }
@@ -1678,64 +1700,83 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   // ---------- 仕入れる（値段・コンディション・発送方法） ----------
   const CONDS = [["新品", "新品"], ["ほぼ新品", "中古(ほぼ新品)"], ["非常に良い", "中古(非常に良い)"], ["良い", "中古(良い)"], ["可", "中古(可)"],
     ["コレ ほぼ新品", "コレクター商品(ほぼ新品)"], ["コレ 非常に良い", "コレクター商品(非常に良い)"], ["コレ 良い", "コレクター商品(良い)"], ["コレ 可", "コレクター商品(可)"]];
+  const DCS = [0, 0.1, 0.15, 0.2, 0.25, 0.3];
   function openTBuy(r, ent) {
-    let cond = ent ? ent.cond : "中古(良い)", ship = ent ? ent.ship : TSET.fba ? "FBA" : "自己発送";
+    const isColle = (c) => c.indexOf("コレクター") === 0;
+    let cond = ent ? ent.cond : "中古(良い)";
+    const autoShip = () => (isColle(cond) ? "自己発送" : r.sz ? r.sz.ship : TSET.fba ? "FBA" : "自己発送");
+    let ship = ent ? ent.ship : autoShip();
+    let dc = ent ? ent.dc || 0 : discR;   // この本の割引（最初は今日の割引）
     const spOf = (c) => (c === "新品" ? r.newP : r.usedP) || "";
     sheet.innerHTML =
       '<div class="st">' + esc(r.t) + "</div>" +
-      '<div class="sv num">中古 ' + ynum(r.usedP) + "円・粗利益 " + ynum(profitOf(r, r.usedP)) + "円・目標額 " + ynum(targetOf(r, r.usedP)) + "円" + (discR > 0 ? '　<span class="dctag" style="font-size:12px">割引' + pctTxt(discR) + "</span>" : "") + "</div>" +
-      '<div class="quick" aria-label="押すとその値段を仕入れ値に入れる（値札の値段）">' + quickPrices().map((p) => '<button type="button" class="num" data-qp="' + p + '">' + yen(p) + "</button>").join("") + "</div>" +
+      '<div class="sv num">中古 ' + ynum(r.usedP) + "円・粗利益 " + ynum(profitOf(r, r.usedP)) + "円・目標額 " + ynum(targetOf(r, r.usedP)) + "円</div>" +
       '<div class="row cbtns">' + CONDS.slice(0, 5).map((c) => '<button type="button" data-cd="' + c[1] + '"' + (c[1] === cond ? ' class="on"' : "") + ">" + c[0] + "</button>").join("") + "</div>" +
       '<div class="row cbtns">' + CONDS.slice(5).map((c) => '<button type="button" class="colle' + (c[1] === cond ? " on" : "") + '" data-cd="' + c[1] + '">' + c[0] + "</button>").join("") + "</div>" +
-      '<div class="row cbtns"><button type="button" data-sh="FBA"' + (ship === "FBA" ? ' class="on"' : "") + '>FBA</button><button type="button" data-sh="自己発送"' + (ship === "自己発送" ? ' class="on"' : "") + ">自己発送</button>" +
-        '<span class="note">売値</span><input id="tbSp" class="small" type="text" inputmode="numeric" value="' + (ent ? ent.sp : spOf(cond)) + '" aria-label="販売予定価格"><span class="note">円</span></div>' +
+      '<div class="row cbtns"><button type="button" data-sh="FBA">FBA</button><button type="button" data-sh="自己発送">自己発送</button>' +
+        '<span id="tbSz" class="note"></span></div>' +
+      '<div class="row cbtns"><span class="note">割引</span>' + DCS.map((x) => '<button type="button" class="dcb" data-dc="' + x + '">' + (x ? Math.round(x * 100) + "%" : "なし") + "</button>").join("") + "</div>" +
+      '<div class="row"><span class="note">売値</span><input id="tbSp" class="small" type="text" inputmode="numeric" value="' + (ent ? ent.sp || "" : spOf(cond)) + '" aria-label="販売予定価格"><span class="note">円</span>' +
+        '<span class="note">仕入れ値</span><input id="price" class="small" type="text" inputmode="tel" autocomplete="off" placeholder="空なら0" value="' + (ent ? ent.p : "") + '" aria-label="仕入れ値（値札の値段）"><span class="note">円</span></div>' +
+      '<div class="note">仕入れ値は値札の値段を入れる（割引は上のボタンで引く）。「5000*0.8」のような計算も入れられる</div>' +
       '<div class="row"><input id="tbCom" class="small wide" type="text" placeholder="コメント（101・上限・付属品・到着したとき確認 など）" value="' + esc(ent ? ent.com : "") + '"></div>' +
-      '<form id="tbForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="仕入れ値（空なら0円）" value="' + (ent ? ent.p : "") + '" aria-label="仕入れ値（値札の値段）"><span>円</span>' +
-      '<button type="submit" class="btn-primary">仕入れ</button>' + (ent ? '<button type="button" id="tbDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
       '<div id="tbPf" class="tbpf num"></div>' +
+      '<form id="tbForm" class="row"><button type="submit" class="btn-primary">仕入れ</button>' + (ent ? '<button type="button" id="tbDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
       '<div id="edErr" class="err" hidden></div>';
     sheet.hidden = false;
     const inp = $("price"), sp = $("tbSp");
-    // 見込み利益：売値 − 手数料 − 仕入れ値（割引の日は割引後）。入れるたびに計算し直す
-    const dcNow = ent ? ent.dc || 0 : discR;
+    // 仕入れ値：数字か、簡単な計算（5000*0.8・5000-500・5000×0.8 など）
+    const costIn = () => {
+      const t = String(inp.value || "").normalize("NFKC").replace(/[×xX]/g, "*").replace(/÷/g, "/").replace(/[円,\s]/g, "");
+      if (!t) return 0;
+      if (/^[0-9.]+$/.test(t)) return Math.floor(parseFloat(t)) || 0;
+      if (/^[0-9.+\-*/()]+$/.test(t)) { try { const v = Function('"use strict";return (' + t + ")")(); return v > 0 ? Math.floor(v) : 0; } catch (e) { return 0; } }
+      return parseInt(t.replace(/[^0-9]/g, ""), 10) || 0;
+    };
+    const paint = () => {
+      sheet.querySelectorAll("[data-sh]").forEach((x) => x.classList.toggle("on", x.dataset.sh === ship));
+      sheet.querySelectorAll("[data-dc]").forEach((x) => x.classList.toggle("on", Math.abs(parseFloat(x.dataset.dc) - dc) < 0.001));
+      $("tbSz").textContent = isColle(cond) ? "（コレクターは自己発送）" : r.sz ? "（" + r.sz.size + "・" + r.sz.txt + "）" : "（サイズ不明）";
+    };
+    // 見込み利益：売値 − 手数料（FBAならFBAの料金も） − 仕入れ値（割引後）
     const calc = () => {
+      paint();
       const spv = parseInt(String(sp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10) || 0;
-      const pv = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10) || 0;
-      const cost = dcNow > 0 ? Math.floor(pv * (1 - dcNow)) : pv;
+      const pv = costIn(), cost = dc > 0 ? Math.floor(pv * (1 - dc)) : pv, fba = ship === "FBA";
       const box = $("tbPf");
       if (!spv) { box.innerHTML = "売値が空なので、利益は出せません（このまま仕入れできます）"; return; }
-      const fee = feeOf(r, spv), pf = spv - fee - cost;
+      const fee = feeOf(r, spv, fba), pf = spv - fee - cost;
       // 損益分岐販売価格（利益0円になる売値）と、目標利益達成販売価格（利益率・最低利益額を満たす売値）
       const need = (ok) => { let x = 1; for (let st = 65536; st >= 1; st /= 2) while (!ok(x + st - 1) && x + st < 2000000) x += st; return x; };
-      const be = need((v) => v - feeOf(r, v) - cost >= 0);
-      const tg = need((v) => v - feeOf(r, v) - cost >= Math.max(Math.ceil((v * TSET.rate) / 100), TSET.min));
+      const be = need((v) => v - feeOf(r, v, fba) - cost >= 0);
+      const tg = need((v) => v - feeOf(r, v, fba) - cost >= Math.max(Math.ceil((v * TSET.rate) / 100), TSET.min));
       box.innerHTML = '見込み利益 <b class="' + (pf < 0 ? "minus" : "") + '">' + yen(pf) + "円</b>" + "（利益率 " + Math.round((pf / spv) * 100) + "%" + (cost > 0 ? "・ROI " + Math.round((pf / cost) * 100) + "%" : "") + "）" +
-        '<div class="note">売値 ' + yen(spv) + " − 手数料 " + yen(fee) + " − 仕入れ " + yen(cost) + (dcNow > 0 ? "（" + yen(pv) + "円の" + pctTxt(dcNow) + "引き）" : "") + "</div>" +
+        '<div class="note">売値 ' + yen(spv) + " − 手数料 " + yen(fee) + (fba ? "（FBA）" : "（自己発送）") + " − 仕入れ " + yen(cost) + (dc > 0 ? "（" + yen(pv) + "円の" + pctTxt(dc) + "引き）" : "") + "</div>" +
         '<div class="note">損益分岐販売価格 ' + yen(be) + "円　目標利益達成販売価格 " + yen(tg) + "円</div>";
     };
     inp.addEventListener("input", calc); sp.addEventListener("input", calc);
     sheet.querySelectorAll("[data-cd]").forEach((b) => b.addEventListener("click", () => {
-      const was = spOf(cond); cond = b.dataset.cd;
+      const was = spOf(cond), wasAuto = autoShip(); cond = b.dataset.cd;
       sheet.querySelectorAll("[data-cd]").forEach((x) => x.classList.toggle("on", x === b));
       if (String(sp.value) === String(was) || !sp.value) sp.value = spOf(cond);
+      if (ship === wasAuto) ship = autoShip();   // 自分で変えていなければ、コレクターにしたら自己発送などに合わせる
+      calc();
     }));
-    sheet.querySelectorAll("[data-sh]").forEach((b) => b.addEventListener("click", () => { ship = b.dataset.sh; sheet.querySelectorAll("[data-sh]").forEach((x) => x.classList.toggle("on", x === b)); }));
-    sheet.querySelectorAll("[data-qp]").forEach((b) => b.addEventListener("click", () => { inp.value = b.dataset.qp; calc(); }));   // 値段のボタンは入れるだけ（利益を見てから「仕入れ」）
-    sheet.querySelectorAll("[data-cd]").forEach((b) => b.addEventListener("click", () => setTimeout(calc, 0)));
+    sheet.querySelectorAll("[data-sh]").forEach((b) => b.addEventListener("click", () => { ship = b.dataset.sh; calc(); }));
+    sheet.querySelectorAll("[data-dc]").forEach((b) => b.addEventListener("click", () => { dc = parseFloat(b.dataset.dc) || 0; calc(); }));
     calc();
     $("edClose").addEventListener("click", closeEditor);
     if (ent) $("tbDel").addEventListener("click", () => { change({ op: "delete", id: ent.id }); closeEditor(); });
     $("tbForm").addEventListener("submit", (e) => {
       e.preventDefault();
-      const p = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10) || 0;   // 空なら0円
+      const p = costIn();   // 空なら0円
       const spv = parseInt(String(sp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10) || 0;
       let com = String($("tbCom").value || "").trim();
-      if (cond.indexOf("コレクター") === 0 && !/コレ|これ/.test(com)) com = (com ? com + "、" : "") + "コレクター";
-      if (p > 0) notePrice(p);
+      if (isColle(cond) && !/コレ|これ/.test(com)) com = (com ? com + "、" : "") + "コレクター";
       const data = {
         kind: "t", id: ent ? ent.id : newId(), at: ent ? ent.at : new Date().toISOString(), d: ent ? ent.d : today(),
-        a: r.asin, j: r.jan || "", t: r.t || "", sp: spv, p, cond, ship, com, dc: ent ? ent.dc || 0 : discR, shop: ent ? ent.shop || "" : tShop,
-        pf: spv ? profitOf(r, spv) : null, ref: r.ref, ppf: r.ppf, list: r.list, done: false,
+        a: r.asin, j: r.jan || "", t: r.t || "", sp: spv, p, cond, ship, com, dc, shop: ent ? ent.shop || "" : tShop,
+        pf: spv ? spv - feeOf(r, spv, ship === "FBA") : null, ref: r.ref, ppf: r.ppf, list: r.list, sz: r.sz || null, done: false,
       };
       change({ op: "set", id: data.id, data });
       closeEditor();
@@ -1769,7 +1810,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       ev.stopPropagation();
       const e = allT().find((x) => x.id === row.dataset.id);
       if (!e || e.done) return;
-      openTBuy({ asin: e.a, jan: e.j, t: e.t, usedP: e.sp, newP: e.sp, ref: e.ref, ppf: e.ppf, list: e.list }, e);
+      openTBuy({ asin: e.a, jan: e.j, t: e.t, usedP: e.sp, newP: e.sp, ref: e.ref, ppf: e.ppf, list: e.list, sz: e.sz }, e);
     }));
   }
   // Shift_JIS にする（00仕入れリストのマクロは Shift_JIS で読む）。ブラウザの読み取り表から逆引きの表を作る
