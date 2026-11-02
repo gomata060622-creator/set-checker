@@ -217,7 +217,9 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .trow img, .trow svg { -webkit-user-drag: none; }
 .trow .tl > img:first-child { pointer-events: none; }
 .trow:first-child { border-top: 0; }
-.trow.tpre { background: #fde9e4; }
+.trow.tpre { background: var(--tpre, #fde9e4); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --tpre: #4a2622; } }
+:root[data-theme="dark"] { --tpre: #4a2622; }
 .trow.swR { box-shadow: inset 6px 0 0 var(--good); }
 .trow.swL { box-shadow: inset -6px 0 0 var(--bad); }
 .trow.terr { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
@@ -1742,7 +1744,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       "<tr><th>参考価格</th><td>" + ynum(r.list) + " 円</td></tr><tr><th>カート</th><td>" + ynum(r.cart) + " 円</td></tr>" +
       "<tr><th>出品者数</th><td>新品 " + ynum(r.cntN) + "・中古 " + ynum(r.cntU) + "</td></tr>" +
       '<tr><th>手数料</th><td class="note">販売手数料' + (r.ref || 15) + "%＋カテゴリ成約料140円＋消費税10%" + (TSET.fba ? "＋FBA " + ynum(r.ppf) + "円" : "") + "</td></tr></table>" +
-      '<div class="actions"><button id="tdBuy" class="btn-primary" type="button">仕入れる</button><button id="tdOff" type="button">出品価格を見る（数トークン）</button><button id="tdFav" type="button">' + (isFav(r.asin) ? "★ お気に入りから外す" : "☆ お気に入りに入れる") + '</button><button id="tdDel" type="button">一覧から消す</button></div>' +
+      '<div class="actions"><button id="tdBuy" class="btn-primary" type="button">仕入れ値を入れる</button><button id="tdOff" type="button">出品価格を見る（数トークン）</button><button id="tdFav" type="button">' + (isFav(r.asin) ? "★ お気に入りから外す" : "☆ お気に入りに入れる") + '</button><button id="tdDel" type="button">一覧から消す</button></div>' +
       '<div id="tdOffers"></div>' + linkBtns(r) + "</section>";
     main.innerHTML = h;
     $("tdBuy").addEventListener("click", () => openTBuy(r));
