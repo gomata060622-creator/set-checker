@@ -1326,7 +1326,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     return {
       id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: new Date().toISOString(), code,
       asin: p.asin, jan: ean, t: p.title || "", img: imgOf(p), bind: p.binding || p.productGroup || "",
-      rank: pos(cur[3]) || (function () { const a = (p.csv && p.csv[3]) || []; return a.length >= 2 ? pos(a[a.length - 1]) : null; })(),   // 今の順位がないときは、グラフの最後の順位 cart: pos(cur[18]), newP: nw.v, newL: NEW_LBL[nw.i] || "", usedP: u.v, usedL: u.v != null ? USED_LBL[u.i] || "" : "",
+      // 今の順位がないときは、履歴の一番新しい順位
+      rank: pos(cur[3]) || (function () { const a = (p.csv && p.csv[3]) || []; for (let i = a.length - 1; i >= 1; i -= 2) if (a[i] > 0) return a[i]; return null; })(),
+      cart: pos(cur[18]), newP: nw.v, newL: NEW_LBL[nw.i] || "", usedP: u.v, usedL: u.v != null ? USED_LBL[u.i] || "" : "",
       list: pos(cur[4]) || pos(p.listPrice), amz: pos(cur[0]) != null, ref, ppf, cntN: pos(cur[11]), cntU: pos(cur[12]),
       g: rankHist(p),
     };
