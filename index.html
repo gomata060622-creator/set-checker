@@ -214,7 +214,8 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .tbtns button { font-size: 12px; padding: 4px 8px; }
 .tlist { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .trow { display: grid; grid-template-columns: 112px 1fr; gap: 8px; padding: 8px; border-top: 1px solid var(--line); background: var(--panel); position: relative; transition: transform .15s; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
-.trow img, .trow svg { pointer-events: none; -webkit-user-drag: none; }
+.trow img, .trow svg { -webkit-user-drag: none; }
+.trow .tl > img:first-child { pointer-events: none; }
 .trow:first-child { border-top: 0; }
 .trow.tpre { background: #fde9e4; }
 .trow.swR { box-shadow: inset 6px 0 0 var(--good); }
@@ -1475,7 +1476,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     curView = { type: "tan" };
     let h = "";
     if (!KK) h += '<div class="callout"><b>Keepaのキーが入っていません</b><div class="note">下の「⚙ 設定」を押して、KeepaのAPIアクセスキー（アマサーチのKeepa設定にあるものと同じ）を貼ってください。</div></div>';
-    h += '<div class="tbar"><span class="tshop">今日の店名 <input id="tShopIn" type="text" value="' + esc(tShop) + '" placeholder="例：滋賀" aria-label="今日の店名"></span><span class="note">押す＝詳しく・仕入れ／右へスワイプ＝お気に入り／左へスワイプ＝グラフを大きく</span>' +
+    h += '<div class="tbar"><span class="tshop">今日の店名 <input id="tShopIn" type="text" value="' + esc(tShop) + '" placeholder="例：滋賀" aria-label="今日の店名"></span><span class="note">押す＝詳しく・仕入れ／グラフを押す＝大きく／右へスワイプ＝お気に入り／左へスワイプ＝Keepaを開く</span>' +
       '<span class="note num">' + (tokensLeft != null ? "Keepa残り " + tokensLeft + "トークン" : "") + "</span>" +
       '<span class="tbtns"><button id="tFavBtn" type="button">★ お気に入り' + (allF().length ? "（" + allF().length + "）" : "") + '</button><button id="tPurBtn" type="button">仕入れ一覧' + (tCountTodo() ? "（単品 " + tCountTodo() + "）" : "") + '</button><button id="tSetBtn" type="button">⚙ 設定</button></span></div>';
     if (!TLIST.length) h += '<div class="empty"><b>本のバーコードを読んでください</b><div class="note">Keepaで今の値段・ランキングを調べて、上に積んでいきます（1冊で1トークンほど）。電波がないと調べられません。</div></div>';
@@ -1522,11 +1523,15 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         if (!r) return;
         if (r.err || r.wait) { if (Math.abs(dx) > 90) { TLIST = TLIST.filter((x) => x !== r); saveTlist(); showTan(); } return; }   // 調べられなかった行は消す
         if (dx > 90) toggleFav(r);          // 右＝お気に入りに入れる（入っていれば外す）
-        else if (dx < -90) showGraph(r);    // 左＝グラフを大きく
+        else if (dx < -90) window.open("https://keepa.com/#!product/5-" + r.asin, "_blank", "noopener");   // 左＝Keepaのサイト（触れるグラフ）を開く
       });
       row.addEventListener("pointercancel", reset);
-      row.addEventListener("click", () => {
+      row.addEventListener("click", (ev) => {
         if (moved) return;
+        if (ev.target.closest && ev.target.closest(".tl .kg, .tl .tg")) {   // 小さいグラフを押したら大きく
+          const r0 = TLIST.find((x) => x.id === row.dataset.id) || (curView.type === "tfav" ? (allF().find((x) => favId(x.a) === row.dataset.id) || {}).snap : null);
+          if (r0 && !r0.err && !r0.wait) { showGraph(r0); return; }
+        }
         if (curView.type === "tfav") { const f = allF().find((x) => favId(x.a) === row.dataset.id); if (f) tLookup(f.a); return; }   // お気に入りを押したら、今の値段で調べ直す（1トークン）
         const r = TLIST.find((x) => x.id === row.dataset.id); if (r && !r.err && !r.wait) showTDet(r.id);
       });
@@ -1589,7 +1594,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   function showTFav() {
     curView = { type: "tfav" };
     const fs = allF().sort((a, b) => (a.at < b.at ? 1 : -1));
-    let h = '<div class="tbar"><b>★ お気に入り（' + fs.length + "冊）</b>" + '<span class="note">押す＝今の値段で調べ直す（1トークン）／右へスワイプ＝お気に入りから外す／左へスワイプ＝グラフを大きく</span></div>';
+    let h = '<div class="tbar"><b>★ お気に入り（' + fs.length + "冊）</b>" + '<span class="note">押す＝今の値段で調べ直す（1トークン）／グラフを押す＝大きく／右へスワイプ＝お気に入りから外す／左へスワイプ＝Keepaを開く</span></div>';
     if (!fs.length) h += '<div class="empty"><b>お気に入りはまだありません</b><div class="note">読んだ本を右へスワイプすると、ここに入ります。セールの日に来たら利益が出そうな本などを入れておけます。</div></div>';
     else h += '<div class="tlist">' + fs.map((f) => tRowHtml(Object.assign({}, f.snap || { asin: f.a, t: f.t, jan: f.j }, { id: favId(f.a), at: (f.snap && f.snap.at) || f.at }))).join("") + "</div>";
     main.innerHTML = h;
