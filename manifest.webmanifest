@@ -1,6 +1,6 @@
 {
-  "name": "セット本チェッカー",
-  "short_name": "セット本",
+  "name": "グーニーズ",
+  "short_name": "グーニーズ",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
