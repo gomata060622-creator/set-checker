@@ -1,6 +1,6 @@
 // 電波がなくても開けるように、ページ一式をスマホの中に置いておく。
 // 開いたときは置いてあるものをすぐ出し、電波があれば裏で新しいものに入れ替える（次に開いたときに新しくなる）。
-const CACHE = "set-checker-v13";
+const CACHE = "set-checker-v14";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "data/author.enc", "data/koheya.enc"];
 
 self.addEventListener("install", (e) => {

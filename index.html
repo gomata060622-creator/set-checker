@@ -986,6 +986,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       (waitIds.length || tWait.length ? '<div>Excelに取り込めたら押してください：<div class="actions" style="margin-top:6px"><button id="pDone">保存した ' + (waitIds.length + tWait.length) + "冊を反映済みにする</button></div></div>" : "") +
       '<div id="pMsg" class="note" hidden></div></div>';
     if (!list.length && !tl.length) h += '<div class="empty"><b>まだ記入はありません</b><div class="note">セットの表で、買った巻の「なし」を押すと値段を記入できます。</div></div>';
+    if (tl.length) h += '<h2 class="sec">単品（' + ttodo.length + "冊が未反映）</h2>" + tPurDays(tl) + (list.length ? '<h2 class="sec">セット本</h2>' : "");   // 単品を上に出す（見落とさないように）
     // 日付ごと
     const days = new Map();
     list.forEach((e) => { if (!days.has(e.d)) days.set(e.d, []); days.get(e.d).push(e); });
@@ -998,7 +999,6 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       });
       h += "</section>";
     });
-    if (tl.length) h += '<h2 class="sec">単品</h2>' + tPurDays(tl);
     const ndone = done.length + tdone.length;
     if (ndone) h += '<div class="actions"><button id="pClean">' + (confirmClean ? "本当に消す（反映済み " + ndone + "冊）" : "反映済みを一覧から消す（" + ndone + "冊）") + "</button>" + (confirmClean ? '<button id="pCleanNo">やめる</button>' : "") + "</div>";
     main.innerHTML = h;
