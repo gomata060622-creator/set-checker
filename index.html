@@ -246,6 +246,10 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .ofr { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid var(--line); }
 .cbtns button { font-size: 13px; padding: 6px 9px; }
 h2.sec { font-size: 15px; margin: 6px 0 0; }
+.trow-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tarr { font-size: 13px; padding: 4px 14px; border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.tpick { font-size: 14px; display: flex; gap: 4px; align-items: center; }
+.tpick input { width: 22px; height: 22px; }
 .tagline { font-size: 13px; background: #fff4c2; color: #1d2530; border-radius: 6px; padding: 2px 6px; }
 .tagline b { color: var(--good); font-size: 15px; }
 .tagline b.minus { color: var(--bad); }
@@ -1374,6 +1378,17 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   let tShop = "";
   try { const s = JSON.parse(localStorage.getItem("sc_tshop") || "null"); if (s && s.d === today()) tShop = s.n || ""; } catch (e) {}
   const saveShop = (n) => { tShop = n; try { localStorage.setItem("sc_tshop", JSON.stringify({ d: today(), n })); } catch (e) {} };
+  let tPick = false;   // まとめて到着に入れる（選ぶ）とき
+  const tPicked = new Set();
+  function toArrival(r) {
+    if (!r || r.err || r.wait) return false;
+    if (r.arrId) return false;
+    const c = r.jan || r.asin;
+    const data = { kind: "a", id: newId(), at: new Date().toISOString(), d: today(), j: c, t: r.t || "", done: false };
+    change({ op: "set", id: data.id, data });
+    r.arrId = data.id; saveTlist();
+    return true;
+  }
   const isTView = () => curView.type === "tan" || curView.type === "tdet" || curView.type === "tsrch" || curView.type === "tfav";
   const favId = (asin) => "f_" + asin;
   const isFav = (asin) => allF().some((f) => f.a === asin);
@@ -1540,7 +1555,10 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         '目標額: <b class="red' + rcls(ut) + '">' + ynum(ut) + "</b>円" +
       "</div></div>" +
       (r.tag ? '<div class="tagline num">値札 ' + yen(r.tag) + "円 → 中古で売れたら利益 <b class=\"" + (r.usedP && profitOf(r, r.usedP) - r.tag < 0 ? "minus" : "") + "\">" + (r.usedP ? yen(profitOf(r, r.usedP) - r.tag) + "円" : "-") + "</b></div>" : "") +
-      '<div class="note num">検索日: ' + esc(fmtDT(r.at)) + "</div></div></div>";
+      '<div class="trow-foot"><span class="note num">検索日: ' + esc(fmtDT(r.at)) + "</span>" +
+        (curView.type === "tan" ? (tPick ? '<label class="tpick"><input type="checkbox" data-pick="' + esc(r.id) + '"' + (tPicked.has(r.id) ? " checked" : "") + "> 選ぶ</label>" :
+          (r.arrId ? '<span class="pill done">到着に入れた</span>' : '<button type="button" class="tarr" data-arr="' + esc(r.id) + '">到着</button>')) : "") +
+      "</div></div></div>";
   }
   const fmtDT = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
   function showTan() {
@@ -1549,7 +1567,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (!KK) h += '<div class="callout"><b>Keepaのキーが入っていません</b><div class="note">下の「⚙ 設定」を押して、KeepaのAPIアクセスキー（アマサーチのKeepa設定にあるものと同じ）を貼ってください。</div></div>';
     h += '<div class="tbar"><span class="tshop">今日の店名 <input id="tShopIn" type="text" value="' + esc(tShop) + '" placeholder="例：滋賀" aria-label="今日の店名"></span><span class="note">押す＝詳しく・仕入れ／グラフを押す＝大きく／右へスワイプ＝お気に入り／左へスワイプ＝Keepaを開く</span>' +
       '<span class="note num">' + (tokensLeft != null ? "Keepa残り " + tokensLeft + "トークン" : "") + "</span>" +
-      '<span class="tbtns"><button id="tFavBtn" type="button">★ お気に入り' + (allF().length ? "（" + allF().length + "）" : "") + '</button><button id="tPurBtn" type="button">仕入れ一覧' + (tCountTodo() ? "（単品 " + tCountTodo() + "）" : "") + '</button><button id="tSetBtn" type="button">⚙ 設定</button></span></div>';
+      '<span class="tbtns">' + (tPick ? '<button id="tPickGo" type="button" class="btn-primary">選んだ ' + tPicked.size + '冊を到着に入れる</button><button id="tPickNo" type="button">やめる</button>' : '<button id="tPickBtn" type="button">まとめて到着</button>') + '<button id="tFavBtn" type="button">★ お気に入り' + (allF().length ? "（" + allF().length + "）" : "") + '</button><button id="tPurBtn" type="button">仕入れ一覧' + (tCountTodo() ? "（単品 " + tCountTodo() + "）" : "") + '</button><button id="tSetBtn" type="button">⚙ 設定</button></span></div>';
     if (!TLIST.length) h += '<div class="empty"><b>本のバーコードを読んでください</b><div class="note">Keepaで今の値段・ランキングを調べて、上に積んでいきます（1冊で1トークンほど）。電波がないと調べられません。</div></div>';
     h += '<div class="tlist">' + TLIST.map(tRowHtml).join("") + "</div>";
     if (TLIST.length) h += '<div class="actions"><button id="tClear" type="button">一覧を全部消す（' + TLIST.length + "件）</button></div>";
@@ -1561,6 +1579,12 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   function bindTan() {
     $("tSetBtn").addEventListener("click", showTSet);
     $("tFavBtn").addEventListener("click", showTFav);
+    const pb = $("tPickBtn"); if (pb) pb.addEventListener("click", () => { tPick = true; tPicked.clear(); showTan(); });
+    const pn = $("tPickNo"); if (pn) pn.addEventListener("click", () => { tPick = false; tPicked.clear(); showTan(); });
+    const pg = $("tPickGo"); if (pg) pg.addEventListener("click", () => {
+      let n = 0; TLIST.forEach((r) => { if (tPicked.has(r.id) && toArrival(r)) n++; });
+      tPick = false; tPicked.clear(); showTan(); tToast(n + "冊を到着に入れました");
+    });
     const si = $("tShopIn");
     si.addEventListener("change", () => saveShop(String(si.value || "").trim()));
     si.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); si.blur(); refocus(); } });
@@ -1573,6 +1597,15 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     bindTanRows();
   }
   function bindTanRows() {
+    main.querySelectorAll(".tarr").forEach((b) => {
+      b.addEventListener("pointerdown", (e) => e.stopPropagation());
+      b.addEventListener("click", (e) => { e.stopPropagation(); const r = TLIST.find((x) => x.id === b.dataset.arr); if (toArrival(r)) { tToast("到着に入れました：" + (r.t || "").slice(0, 16)); showTan(); } });
+    });
+    main.querySelectorAll("[data-pick]").forEach((cb) => {
+      cb.parentElement.addEventListener("pointerdown", (e) => e.stopPropagation());
+      cb.parentElement.addEventListener("click", (e) => e.stopPropagation());
+      cb.addEventListener("change", () => { if (cb.checked) tPicked.add(cb.dataset.pick); else tPicked.delete(cb.dataset.pick); const g = $("tPickGo"); if (g) g.textContent = "選んだ " + tPicked.size + "冊を到着に入れる"; });
+    });
     main.querySelectorAll(".tretry").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); const r = TLIST.find((x) => x.id === b.dataset.id); if (r) { TLIST = TLIST.filter((x) => x !== r); tLookup(r.code); } }));
     main.querySelectorAll(".trow").forEach((row) => {
       // スワイプ：指でもマウスでも動く（pointerイベント）。横に90px以上動かしたら、右＝仕入れ／左＝消す
