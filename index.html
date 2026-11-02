@@ -964,6 +964,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const data = {
         id: ent ? ent.id : newId(), at: ent ? ent.at : new Date().toISOString(), d: ent ? ent.d : today(),
         s: s.s, gc: s.col, a: s.a || "", t: s.t || "", oc: o.c, oi: oi, v: v, vt: (vol && vol[0]) || "", j: (vol && vol[1]) || "", p: p, kari: false, dc: ent && ent.kari ? (ent.dc || 0) : discR, done: false,
+        fix: !!(ent && (ent.done || ent.fix)),   // Excelに書いたあとで直した記入（書き込むとき、前の値段を書き直す）
       };
       change({ op: "set", id: data.id, data });
       closeEditor();
@@ -1110,8 +1111,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const s = DATA.sets[si];
       const oi = s.own.findIndex((o) => o.c === e.oc);
       if (oi < 0) return;
-      lastList = lastList || null;
-      showSet(si, e.v - 1, false);
+      openEditor(si, oi, e.v);   // 押したら、その巻の値段を入れ直す画面を開く（Excelに書いたあとでも直せる）
     }));
     if (!keepScroll) window.scrollTo(0, 0);
   }
@@ -1121,8 +1121,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   function exportCsv(todo, quiet) {
     const msg = $("pMsg");
     // 値段は値札の値段。割引の日は「店」を「店舗 20%」のようにして、セットデータで割引の色に塗る
-    const rows = [["日付", "シート", "セット名", "セットのASIN", "グレーの列", "書き込む列", "巻", "書名", "JAN", "値段", "店", "ID"]];
-    todo.slice().sort((a, b) => (a.at < b.at ? -1 : 1)).forEach((e) => rows.push([e.d, e.s, e.t, e.a, e.gc, e.oc, e.v, e.vt, e.j, e.p, e.dc > 0 ? "店舗 " + pctTxt(e.dc) : "店舗", e.id]));
+    const rows = [["日付", "シート", "セット名", "セットのASIN", "グレーの列", "書き込む列", "巻", "書名", "JAN", "値段", "店", "ID", "直し"]];
+    todo.slice().sort((a, b) => (a.at < b.at ? -1 : 1)).forEach((e) => rows.push([e.d, e.s, e.t, e.a, e.gc, e.oc, e.v, e.vt, e.j, e.p, e.dc > 0 ? "店舗 " + pctTxt(e.dc) : "店舗", e.id, e.fix ? 1 : ""]));
     const csv = "﻿" + rows.map((r) => r.map(csvq).join(",")).join("\r\n") + "\r\n";
     const d = new Date();
     const fn = "スマホ仕入れ_" + d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + "_" + String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0") + ".csv";
