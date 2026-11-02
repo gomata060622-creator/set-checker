@@ -1701,8 +1701,13 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const box = $("tbPf");
       if (!spv) { box.innerHTML = "売値が空なので、利益は出せません（このまま仕入れできます）"; return; }
       const fee = feeOf(r, spv), pf = spv - fee - cost;
-      box.innerHTML = '見込み利益 <b class="' + (pf < 0 ? "minus" : "") + '">' + yen(pf) + "円</b>" + (spv ? "（利益率 " + Math.round((pf / spv) * 100) + "%）" : "") +
-        '<span class="note">　売値 ' + yen(spv) + " − 手数料 " + yen(fee) + " − 仕入れ " + yen(cost) + (dcNow > 0 ? "（" + yen(pv) + "円の" + pctTxt(dcNow) + "引き）" : "") + "</span>";
+      // 損益分岐販売価格（利益0円になる売値）と、目標利益達成販売価格（利益率・最低利益額を満たす売値）
+      const need = (ok) => { let x = 1; for (let st = 65536; st >= 1; st /= 2) while (!ok(x + st - 1) && x + st < 2000000) x += st; return x; };
+      const be = need((v) => v - feeOf(r, v) - cost >= 0);
+      const tg = need((v) => v - feeOf(r, v) - cost >= Math.max(Math.ceil((v * TSET.rate) / 100), TSET.min));
+      box.innerHTML = '見込み利益 <b class="' + (pf < 0 ? "minus" : "") + '">' + yen(pf) + "円</b>" + "（利益率 " + Math.round((pf / spv) * 100) + "%" + (cost > 0 ? "・ROI " + Math.round((pf / cost) * 100) + "%" : "") + "）" +
+        '<div class="note">売値 ' + yen(spv) + " − 手数料 " + yen(fee) + " − 仕入れ " + yen(cost) + (dcNow > 0 ? "（" + yen(pv) + "円の" + pctTxt(dcNow) + "引き）" : "") + "</div>" +
+        '<div class="note">損益分岐販売価格 ' + yen(be) + "円　目標利益達成販売価格 " + yen(tg) + "円</div>";
     };
     inp.addEventListener("input", calc); sp.addEventListener("input", calc);
     sheet.querySelectorAll("[data-cd]").forEach((b) => b.addEventListener("click", () => {
