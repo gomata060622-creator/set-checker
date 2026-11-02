@@ -204,6 +204,11 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 /* 単品（アマサーチと同じ並び） */
 .tbar { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; justify-content: space-between; }
 .tbtns { display: flex; gap: 6px; }
+.cambtn { font-size: 20px; padding: 6px 10px; }
+.cam { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.cam video { width: 62%; max-height: 150px; object-fit: cover; border-radius: 8px; background: #000; border: 2px solid var(--accent); }
+.camside { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.camside .note { word-break: break-all; }
 .tshop { font-size: 12px; display: flex; gap: 4px; align-items: center; }
 .tshop input { font: inherit; width: 7em; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .tbtns button { font-size: 12px; padding: 4px 8px; }
@@ -236,6 +241,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 .offs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; }
 .ofr { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid var(--line); }
 .cbtns button { font-size: 13px; padding: 6px 9px; }
+h2.sec { font-size: 15px; margin: 6px 0 0; }
 .cbtns button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 .sheet input.small { font-size: 16px; width: 6em; padding: 6px 8px; }
 .sheet input.small.wide, .callout input.small.wide { width: 100%; text-align: left; }
@@ -247,7 +253,9 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     <button type="button" id="backBtn" class="backbtn" aria-label="1つ前の画面に戻る">← 戻る</button>
     <input id="q" type="search" enterkeyhint="search" placeholder="バーコードを読む／書名・セット名" aria-label="バーコードか書名で探す">
     <button type="submit" class="btn-primary">探す</button>
+    <button type="button" id="camBtn" class="cambtn" aria-label="カメラでバーコードを読む">📷</button>
   </form>
+  <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
     <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="homeBtn" class="purchbtn" type="button">トップ</button></span>
@@ -812,11 +820,13 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     else if (curView.type === "home" && DATA && !DATA.sample) showHome();
     else if (curView.type === "tan") showTan();
     else if (curView.type === "tpur") showTPur(true);
+    else if (curView.type === "tsrch") showTSrch();
     else if (curView.type === "tdet") showTDet(curView.id);
   }
   function updatePurchBtn() {
     const all = allEntries().filter((e) => !e.done);
-    const n = all.length, k = all.filter((e) => e.kari).length;
+    let tn = 0; try { tn = allT().filter((e) => !e.done).length; } catch (e) {}
+    const n = all.length + tn, k = all.filter((e) => e.kari).length;
     $("purchBtn").innerHTML = "仕入れ一覧" + (n ? "（未反映 <b>" + n + "</b>" + (k ? "・仮 <b>" + k + "</b>" : "") + "）" : "");
     try { updateTanBtn(); } catch (e) {}
   }
@@ -941,6 +951,9 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     const karis = todoAll.filter((e) => e.kari).sort((a, b) => (a.at < b.at ? -1 : 1));   // 金額が仮のもの（登録した順）
     const todo = todoAll.filter((e) => !e.kari);   // Excelに書き込むのは金額が決まったものだけ
     const waitIds = lastExport.filter((id) => todo.some((e) => e.id === id));
+    // 単品の仕入れも同じ一覧に出す（Excel用に保存を1回押せば、セット用と単品用の2つのファイルができる）
+    const tl = allT().sort((a, b) => (a.at < b.at ? 1 : -1)), ttodo = tl.filter((e) => !e.done), tdone = tl.filter((e) => e.done);
+    const tWait = tLastExport.filter((id) => ttodo.some((e) => e.id === id));
     let h = "";
     // 金額が仮のもの：ここで金額を入れていく
     h += '<section class="karibox"><h2 class="num"><span>金額が仮の本：' + karis.length + "冊</span>" +
@@ -952,13 +965,13 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
         '<form class="kform" data-id="' + esc(e.id) + '"><input class="kin" type="text" inputmode="numeric" enterkeyhint="next" autocomplete="off" placeholder="金額" aria-label="買った値段"><span>円</span><button type="submit" class="btn-primary">決定</button><span class="err" hidden></span></form></div>';
     });
     h += "</section>";
-    h += '<div class="callout"><div><b>まだExcelに入っていない仕入れ：' + todo.length + "冊</b>" + (karis.length ? '　<span class="note">（金額が仮の ' + karis.length + "冊は、金額を入れるまでExcel用に入りません）</span>" : "") + (pending.length ? '　<span class="note">（送れていない記入 ' + pending.length + "件。電波が入ると送ります）</span>" : "") + "</div>" +
+    h += '<div class="callout"><div><b>まだExcelに入っていない仕入れ：セット ' + todo.length + "冊・単品 " + ttodo.length + "冊</b>" + (karis.length ? '　<span class="note">（金額が仮の ' + karis.length + "冊は、金額を入れるまでExcel用に入りません）</span>" : "") + (pending.length ? '　<span class="note">（送れていない記入 ' + pending.length + "件。電波が入ると送ります）</span>" : "") + "</div>" +
       '<div class="note">' + (!API ? '<span style="color:var(--bad)">保存場所が設定されていません。最初に送ったリンクから開き直してください（記入はこのスマホの中には残ります）。</span>' : syncOk === false ? "保存場所につながっていません（電波が入ると送ります）" : syncAt ? "保存場所と " + String(syncAt.getHours()).padStart(2, "0") + ":" + String(syncAt.getMinutes()).padStart(2, "0") + " にやりとりしました" : "保存場所につないでいます…") + "</div>" +
-      '<div class="note">パソコンでこのページを開いて「Excel用に保存」→ セットデータの「スマホの仕入れを書き込む」で、同じマスに書き込みます。</div>' +
-      '<div class="actions"><button id="pSave" class="btn-primary"' + (todo.length ? "" : " disabled") + ">Excel用に保存（" + todo.length + "冊）</button></div>" +
-      (waitIds.length ? '<div>Excelに書き込めたら押してください：<div class="actions" style="margin-top:6px"><button id="pDone">保存した ' + waitIds.length + "冊を反映済みにする</button></div></div>" : "") +
+      '<div class="note">パソコンでこのページを開いて「Excel用に保存」を押すと、セット本は「スマホ仕入れ_….csv」（セットデータの「スマホの仕入れを書き込む」で書き込む）、単品は「StockList_….csv」（00仕入れリストの仕入予定シートの取り込みボタンで入る）がダウンロードフォルダに入ります。</div>' +
+      '<div class="actions"><button id="pSave" class="btn-primary"' + (todo.length || ttodo.length ? "" : " disabled") + ">Excel用に保存（セット " + todo.length + "冊・単品 " + ttodo.length + "冊）</button></div>" +
+      (waitIds.length || tWait.length ? '<div>Excelに取り込めたら押してください：<div class="actions" style="margin-top:6px"><button id="pDone">保存した ' + (waitIds.length + tWait.length) + "冊を反映済みにする</button></div></div>" : "") +
       '<div id="pMsg" class="note" hidden></div></div>';
-    if (!list.length) h += '<div class="empty"><b>まだ記入はありません</b><div class="note">セットの表で、買った巻の「なし」を押すと値段を記入できます。</div></div>';
+    if (!list.length && !tl.length) h += '<div class="empty"><b>まだ記入はありません</b><div class="note">セットの表で、買った巻の「なし」を押すと値段を記入できます。</div></div>';
     // 日付ごと
     const days = new Map();
     list.forEach((e) => { if (!days.has(e.d)) days.set(e.d, []); days.get(e.d).push(e); });
@@ -971,7 +984,9 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
       });
       h += "</section>";
     });
-    if (done.length) h += '<div class="actions"><button id="pClean">' + (confirmClean ? "本当に消す（反映済み " + done.length + "冊）" : "反映済みを一覧から消す（" + done.length + "冊）") + "</button>" + (confirmClean ? '<button id="pCleanNo">やめる</button>' : "") + "</div>";
+    if (tl.length) h += '<h2 class="sec">単品</h2>' + tPurDays(tl);
+    const ndone = done.length + tdone.length;
+    if (ndone) h += '<div class="actions"><button id="pClean">' + (confirmClean ? "本当に消す（反映済み " + ndone + "冊）" : "反映済みを一覧から消す（" + ndone + "冊）") + "</button>" + (confirmClean ? '<button id="pCleanNo">やめる</button>' : "") + "</div>";
     main.innerHTML = h;
     const ki = $("kariIn");
     ki.addEventListener("change", () => {
@@ -993,18 +1008,28 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     }));
     const back = $("pBack");
     if (back) back.addEventListener("click", () => (lastList ? showList(lastList.intro) : showHome()));
-    $("pSave").addEventListener("click", () => exportCsv(todo));
+    $("pSave").addEventListener("click", () => {
+      const fs = [];
+      if (todo.length) fs.push(exportCsv(todo, true));
+      if (ttodo.length) fs.push(tExportCsv(ttodo, true));
+      showPurch(true);
+      const m2 = $("pMsg"); m2.hidden = false;
+      m2.textContent = fs.every(Boolean) ? fs.join("・") + " をダウンロードフォルダに保存しました。" : "保存できませんでした。もう一度押してください。";
+    });
     const pd = $("pDone");
     if (pd) pd.addEventListener("click", () => {
       allEntries().filter((e) => waitIds.includes(e.id)).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }));
+      allT().filter((e) => tWait.includes(e.id)).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }));
       lastExport = []; try { localStorage.setItem("sc_lastExport", "[]"); } catch (e) {}
+      tLastExport = []; try { localStorage.setItem("sc_tlastExport", "[]"); } catch (e) {}
       showPurch(true);
     });
+    bindTPurDays();
     const pc = $("pClean");
     if (pc) pc.addEventListener("click", () => {
       if (!confirmClean) { confirmClean = true; showPurch(true); return; }
       confirmClean = false;
-      done.forEach((e) => change({ op: "delete", id: e.id }));
+      done.concat(tdone).forEach((e) => change({ op: "delete", id: e.id }));
     });
     const pn = $("pCleanNo");
     if (pn) pn.addEventListener("click", () => { confirmClean = false; showPurch(true); });
@@ -1024,7 +1049,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
 
   // Excel用のファイル（CSV）
   const csvq = (v) => { const t = String(v == null ? "" : v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
-  async function exportCsv(todo) {
+  function exportCsv(todo, quiet) {
     const msg = $("pMsg");
     // 値段は値札の値段。割引の日は「店」を「店舗 20%」のようにして、セットデータで割引の色に塗る
     const rows = [["日付", "シート", "セット名", "セットのASIN", "グレーの列", "書き込む列", "巻", "書名", "JAN", "値段", "店", "ID"]];
@@ -1039,15 +1064,17 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       lastExport = todo.map((e) => e.id);
       try { localStorage.setItem("sc_lastExport", JSON.stringify(lastExport)); } catch (e) {}
+      if (quiet) return fn;
       showPurch(true);
       const m2 = $("pMsg"); m2.hidden = false; m2.textContent = fn + " をダウンロードフォルダに保存しました。";
     } catch (e) {
+      if (quiet) return null;
       msg.hidden = false;
       msg.textContent = e && e.code === "declined" ? "保存をやめました。" : "保存できませんでした。もう一度押してください。";
     }
   }
 
-  $("purchBtn").addEventListener("click", () => { closeEditor(); if (isTView()) showTPur(false); else showPurch(false); });
+  $("purchBtn").addEventListener("click", () => { closeEditor(); showPurch(false); });
   let histFirst = true;
   async function pull() {
     if (!API) return;
@@ -1253,7 +1280,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
   let tShop = "";
   try { const s = JSON.parse(localStorage.getItem("sc_tshop") || "null"); if (s && s.d === today()) tShop = s.n || ""; } catch (e) {}
   const saveShop = (n) => { tShop = n; try { localStorage.setItem("sc_tshop", JSON.stringify({ d: today(), n })); } catch (e) {} };
-  const isTView = () => curView.type === "tan" || curView.type === "tdet" || curView.type === "tpur";
+  const isTView = () => curView.type === "tan" || curView.type === "tdet" || curView.type === "tsrch";
 
   // ---------- Keepa ----------
   const kTime = (t) => (t + 21564000) * 60000;
@@ -1299,13 +1326,13 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     return {
       id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: new Date().toISOString(), code,
       asin: p.asin, jan: ean, t: p.title || "", img: imgOf(p), bind: p.binding || p.productGroup || "",
-      rank: pos(cur[3]), cart: pos(cur[18]), newP: nw.v, newL: NEW_LBL[nw.i] || "", usedP: u.v, usedL: USED_LBL[u.i] || "",
+      rank: pos(cur[3]), cart: pos(cur[18]), newP: nw.v, newL: NEW_LBL[nw.i] || "", usedP: u.v, usedL: u.v != null ? USED_LBL[u.i] || "" : "",
       list: pos(cur[4]) || pos(p.listPrice), amz: pos(cur[0]) != null, ref, ppf, cntN: pos(cur[11]), cntU: pos(cur[12]),
       g: rankHist(p),
     };
   }
-  async function keepa(params) {
-    const u = "https://api.keepa.com/product?key=" + encodeURIComponent(KK) + "&domain=5&" + params;
+  async function keepa(params, path) {
+    const u = "https://api.keepa.com/" + (path || "product") + "?key=" + encodeURIComponent(KK) + "&domain=5&" + params;
     const r = await fetch(u, { cache: "no-store" });
     let j = null;
     try { j = await r.json(); } catch (e) {}
@@ -1344,8 +1371,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
   function tCountTodo() { return allT().filter((e) => !e.done).length; }
   function updateTanBtn() {
     const b = $("tanBtn"); if (!b) return;
-    const n = tCountTodo();
-    b.innerHTML = (isTView() ? "単品中" : "単品") + (n ? "（未反映 <b>" + n + "</b>）" : "");
+    b.innerHTML = isTView() ? "単品中" : "単品";
     b.classList.toggle("dcon", isTView());
   }
   function tRowHtml(r) {
@@ -1380,7 +1406,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     if (!KK) h += '<div class="callout"><b>Keepaのキーが入っていません</b><div class="note">下の「⚙ 設定」を押して、KeepaのAPIアクセスキー（アマサーチのKeepa設定にあるものと同じ）を貼ってください。</div></div>';
     h += '<div class="tbar"><span class="tshop">今日の店名 <input id="tShopIn" type="text" value="' + esc(tShop) + '" placeholder="例：滋賀" aria-label="今日の店名"></span><span class="note">右へスワイプ＝仕入れ／左へスワイプ＝消す</span>' +
       '<span class="note num">' + (tokensLeft != null ? "Keepa残り " + tokensLeft + "トークン" : "") + "</span>" +
-      '<span class="tbtns"><button id="tPurBtn" type="button">単品の仕入れ一覧' + (tCountTodo() ? "（" + tCountTodo() + "）" : "") + '</button><button id="tSetBtn" type="button">⚙ 設定</button></span></div>';
+      '<span class="tbtns"><button id="tPurBtn" type="button">仕入れ一覧' + (tCountTodo() ? "（単品 " + tCountTodo() + "）" : "") + '</button><button id="tSetBtn" type="button">⚙ 設定</button></span></div>';
     if (!TLIST.length) h += '<div class="empty"><b>本のバーコードを読んでください</b><div class="note">Keepaで今の値段・ランキングを調べて、上に積んでいきます（1冊で1トークンほど）。電波がないと調べられません。</div></div>';
     h += '<div class="tlist">' + TLIST.map(tRowHtml).join("") + "</div>";
     if (TLIST.length) h += '<div class="actions"><button id="tClear" type="button">一覧を全部消す（' + TLIST.length + "件）</button></div>";
@@ -1394,7 +1420,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     const si = $("tShopIn");
     si.addEventListener("change", () => saveShop(String(si.value || "").trim()));
     si.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); si.blur(); refocus(); } });
-    $("tPurBtn").addEventListener("click", () => showTPur(false));
+    $("tPurBtn").addEventListener("click", () => showPurch(false));
     const tc = $("tClear");
     if (tc) tc.addEventListener("click", () => {
       if (tc.dataset.c !== "1") { tc.dataset.c = "1"; tc.textContent = "本当に全部消す（" + TLIST.length + "件）"; return; }
@@ -1433,7 +1459,11 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
   async function tLookup(raw) {
     const c = tCode(raw);
     const r0 = { id: "w" + Date.now().toString(36), code: String(raw).trim(), at: new Date().toISOString(), wait: true };
-    if (!c) { r0.wait = false; r0.err = "本のバーコード（JAN・ISBN）ではないようです"; TLIST.unshift(r0); saveTlist(); if (curView.type === "tan") showTan(); return; }
+    if (!c) {
+      const term = String(raw || "").trim();
+      if (term.length >= 2 && !/^\d+$/.test(term.normalize("NFKC"))) return tWordSearch(term);   // 書名で探す
+      r0.wait = false; r0.err = "本のバーコード（JAN・ISBN）ではないようです"; TLIST.unshift(r0); saveTlist(); if (curView.type === "tan") showTan(); return;
+    }
     if (!KK) { showTSet(); return; }
     TLIST.unshift(r0);
     if (curView.type !== "tan") showTan(); else showTan();
@@ -1553,7 +1583,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     sheet.querySelectorAll("[data-sh]").forEach((b) => b.addEventListener("click", () => { ship = b.dataset.sh; sheet.querySelectorAll("[data-sh]").forEach((x) => x.classList.toggle("on", x === b)); }));
     sheet.querySelectorAll("[data-qp]").forEach((b) => b.addEventListener("click", () => { inp.value = b.dataset.qp; $("tbForm").requestSubmit(); }));
     $("edClose").addEventListener("click", closeEditor);
-    if (ent) $("tbDel").addEventListener("click", () => { change({ op: "delete", id: ent.id }); closeEditor(); if (curView.type === "tpur") showTPur(true); });
+    if (ent) $("tbDel").addEventListener("click", () => { change({ op: "delete", id: ent.id }); closeEditor(); });
     $("tbForm").addEventListener("submit", (e) => {
       e.preventDefault();
       const p = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10);
@@ -1570,56 +1600,37 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
       change({ op: "set", id: data.id, data });
       closeEditor();
       updateTanBtn();
-      if (curView.type === "tpur") showTPur(true); else showTan();   // 詳しい画面から仕入れたら一覧へもどる
+      if (curView.type === "purch") showPurch(true); else showTan();   // 詳しい画面から仕入れたら一覧へもどる
     });
   }
 
   // ---------- 単品の仕入れ一覧 → Excel用（アマサーチと同じ StockList_….csv） ----------
   let tLastExport = [];
   try { tLastExport = JSON.parse(localStorage.getItem("sc_tlastExport") || "[]") || []; } catch (e) {}
-  function showTPur(keepScroll) {
-    curView = { type: "tpur" };
-    const list = allT().sort((a, b) => (a.at < b.at ? 1 : -1));
-    const todo = list.filter((e) => !e.done), waitIds = tLastExport.filter((id) => todo.some((e) => e.id === id));
-    let h = '<div class="callout"><div><b>まだExcelに入っていない単品の仕入れ：' + todo.length + "冊</b></div>" +
-      '<div class="note">パソコンでこの画面を開いて「Excel用に保存」→ 00仕入れリストの仕入予定シートの取り込みボタンで、本年度仕入分に入ります（アマサーチのCSVと同じ形）。</div>' +
-      '<div class="actions"><button id="tpSave" class="btn-primary"' + (todo.length ? "" : " disabled") + ">Excel用に保存（" + todo.length + "冊）</button></div>" +
-      (waitIds.length ? '<div>Excelに取り込めたら押してください：<div class="actions" style="margin-top:6px"><button id="tpDone">保存した ' + waitIds.length + "冊を反映済みにする</button></div></div>" : "") +
-      '<div id="tpMsg" class="note" hidden></div></div>';
-    if (!list.length) h += '<div class="empty"><b>まだ単品の仕入れはありません</b><div class="note">読んだ本を右へスワイプするか、本を押して「仕入れる」で登録します。</div></div>';
+  // 単品の仕入れ一覧は、セットの仕入れ一覧（showPurch）の下に出す
+  function showTPur(keepScroll) { return showPurch(keepScroll); }
+  function tPurDays(list) {
+    let h = "";
     const days = new Map();
     list.forEach((e) => { if (!days.has(e.d)) days.set(e.d, []); days.get(e.d).push(e); });
     days.forEach((es, d) => {
       const sum = es.reduce((a, e) => a + (e.dc > 0 ? Math.floor(e.p * (1 - e.dc)) : e.p), 0);
-      h += '<section class="day"><h2 class="num"><span>' + esc(d) + "</span><span>" + es.length + "冊・" + yen(sum) + "円</span></h2>";
+      h += '<section class="day"><h2 class="num"><span>' + esc(d) + "（単品）</span><span>" + es.length + "冊・" + yen(sum) + "円</span></h2>";
       es.forEach((e) => {
-        h += '<div class="prow" data-id="' + esc(e.id) + '"><div class="pt">' + esc(e.t || e.a) + '</div><div class="pp num">' + yen(e.p) + "円" + (e.dc > 0 ? '<span class="dctag">-' + pctTxt(e.dc) + "</span>" : "") + '</div><span class="pill ' + (e.done ? "done" : "todo") + '">' + (e.done ? "反映済み" : "未反映") + "</span>" +
-          '<div class="pv num">' + esc(e.cond) + "・" + esc(e.ship) + "・売値 " + yen(e.sp) + "円" + (e.com ? "・" + esc(e.com) : "") + (e.shop ? "・" + esc(e.shop) : "") + "</div></div>";
+        h += '<div class="prow tprow" data-id="' + esc(e.id) + '"><div class="pt">' + esc(e.t || e.a) + '</div><div class="pp num">' + yen(e.p) + "円" + (e.dc > 0 ? '<span class="dctag">-' + pctTxt(e.dc) + "</span>" : "") + '</div><span class="pill ' + (e.done ? "done" : "todo") + '">' + (e.done ? "反映済み" : "未反映") + "</span>" +
+          '<div class="pv num">' + esc(e.cond) + "・" + esc(e.ship) + "・売値 " + (e.sp ? yen(e.sp) + "円" : "未定") + (e.com ? "・" + esc(e.com) : "") + (e.shop ? "・" + esc(e.shop) : "") + "</div></div>";
       });
       h += "</section>";
     });
-    const done = list.filter((e) => e.done);
-    if (done.length) h += '<div class="actions"><button id="tpClean">反映済みを一覧から消す（' + done.length + "冊）</button></div>";
-    main.innerHTML = h;
-    $("tpSave").addEventListener("click", () => tExportCsv(todo));
-    const pd = $("tpDone");
-    if (pd) pd.addEventListener("click", () => {
-      allT().filter((e) => waitIds.includes(e.id)).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }));
-      tLastExport = []; try { localStorage.setItem("sc_tlastExport", "[]"); } catch (e) {}
-      showTPur(true);
-    });
-    const pc = $("tpClean");
-    if (pc) pc.addEventListener("click", () => {
-      if (pc.dataset.c !== "1") { pc.dataset.c = "1"; pc.textContent = "本当に消す（反映済み " + done.length + "冊）"; return; }
-      done.forEach((e) => change({ op: "delete", id: e.id }));
-    });
-    main.querySelectorAll(".prow").forEach((row) => row.addEventListener("click", () => {
+    return h;
+  }
+  function bindTPurDays() {
+    main.querySelectorAll(".tprow").forEach((row) => row.addEventListener("click", (ev) => {
+      ev.stopPropagation();
       const e = allT().find((x) => x.id === row.dataset.id);
       if (!e || e.done) return;
       openTBuy({ asin: e.a, jan: e.j, t: e.t, usedP: e.sp, newP: e.sp, ref: e.ref, ppf: e.ppf, list: e.list }, e);
     }));
-    if (!keepScroll) window.scrollTo(0, 0);
-    updateTanBtn();
   }
   // Shift_JIS にする（00仕入れリストのマクロは Shift_JIS で読む）。ブラウザの読み取り表から逆引きの表を作る
   let SJ = null;
@@ -1648,7 +1659,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     }
     return new Uint8Array(out);
   }
-  function tExportCsv(todo) {
+  function tExportCsv(todo, quiet) {
     const pad = (n) => String(n).padStart(2, "0");
     const head = ["ASIN", "JAN", "商品名", "販売予定価格", "仕入れ価格", "見込み利益", "参考価格", "損益分岐点", "仕入れ個数", "コンディション", "発送方法", "SKU", "仕入れ先", "コメント", "仕入れ日", "その他費用", "コンディション説明"];
     const rows = [head];
@@ -1669,11 +1680,8 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       tLastExport = todo.map((e) => e.id);
       try { localStorage.setItem("sc_tlastExport", JSON.stringify(tLastExport)); } catch (e) {}
-      showTPur(true);
-      const m = $("tpMsg"); m.hidden = false; m.textContent = fn + " をダウンロードフォルダに保存しました。";
-    } catch (e) {
-      const m = $("tpMsg"); m.hidden = false; m.textContent = "保存できませんでした。もう一度押してください。";
-    }
+      return fn;
+    } catch (e) { return null; }
   }
 
   // ---------- 設定 ----------
@@ -1701,13 +1709,94 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
     });
   }
 
+
+  // ---------- ワード検索（書名で探す。Keepaの検索は1回で10トークンほど） ----------
+  let tSrch = null;
+  async function tWordSearch(term) {
+    if (!KK) { showTSet(); return; }
+    tSrch = { term, list: null, err: "" };
+    showTSrch();
+    try {
+      const j = await keepa("type=product&term=" + encodeURIComponent(term) + "&stats=365&history=1&days=365", "search");
+      tSrch.list = (j.products || []).filter((p) => p && p.asin && p.title).map((p) => { const r = fromKeepa(p, p.asin); r.noStats = !p.stats; return r; });
+    } catch (e) { tSrch.err = (e && e.message) || "探せませんでした"; tSrch.list = []; if (e instanceof TypeError) tSrch.err = navigator.onLine ? "Keepaにつながりませんでした" : "電波がないため探せませんでした"; }
+    if (curView.type === "tsrch") showTSrch();
+  }
+  function showTSrch() {
+    curView = { type: "tsrch" };
+    if (!tSrch) return showTan();
+    let h = '<div class="status">「' + esc(tSrch.term) + "」の検索" + (tSrch.list ? "：" + tSrch.list.length + "件" : "") + (tokensLeft != null ? '　<span class="note">Keepa残り ' + tokensLeft + "トークン</span>" : "") + "</div>";
+    if (!tSrch.list) h += '<div class="note">Keepaで探しています…（10トークンほど）</div>';
+    else if (tSrch.err) h += '<div class="empty">' + esc(tSrch.err) + "</div>";
+    else if (!tSrch.list.length) h += '<div class="empty">見つかりませんでした。言葉を変えてみてください。</div>';
+    else h += '<div class="note">押した本が、読んだ本の一覧の一番上に入ります。</div><div class="tlist">' + tSrch.list.map((r) => tRowHtml(Object.assign({}, r, { id: "s" + r.asin }))).join("") + "</div>";
+    main.innerHTML = h;
+    main.querySelectorAll(".trow").forEach((row) => row.addEventListener("click", () => {
+      const r = tSrch.list.find((x) => "s" + x.asin === row.dataset.id);
+      if (!r) return;
+      if (r.noStats) { tLookup(r.asin); return; }   // 値段が付いてこなかったときは、ASINで調べ直す（1トークン）
+      TLIST = TLIST.filter((x) => x.asin !== r.asin || x.at !== r.at);
+      TLIST.unshift(Object.assign({}, r, { id: "t" + Date.now().toString(36), at: new Date().toISOString() }));
+      saveTlist();
+      showTan();
+      tSignal(TLIST[0]);
+    }));
+    updateTanBtn();
+    refocus();
+  }
+
+  // ---------- カメラで読む（Androidのchromeのバーコード読み取りを使う） ----------
+  let camStream = null, camTimer = null, camDet = null, camLast = { c: "", t: 0 };
+  const camMsg = (t) => { $("camMsg").textContent = t; };
+  async function camOpen() {
+    $("cam").hidden = false;
+    if (camStream) return;
+    if (!("BarcodeDetector" in window)) { camMsg("このブラウザではカメラで読めません（AndroidのChromeなら読めます）"); return; }
+    try {
+      const fm = await BarcodeDetector.getSupportedFormats();
+      camDet = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "codabar", "itf"].filter((f) => fm.includes(f)) });
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+      const v = $("camV"); v.srcObject = camStream; await v.play();
+      camMsg("バーコードを写してください");
+      camLoop();
+    } catch (e) { camMsg("カメラを開けませんでした（Chromeのカメラの許可を確かめてください）"); camStop(true); }
+  }
+  async function camLoop() {
+    if (!camStream) return;
+    try {
+      const r = await camDet.detect($("camV"));
+      for (const b of r) { const c = String(b.rawValue || "").trim(); if (c) { camHit(c); break; } }
+    } catch (e) {}
+    camTimer = setTimeout(camLoop, 150);
+  }
+  function camHit(c) {
+    const now = Date.now();
+    if (c === camLast.c && now - camLast.t < 3000) { camLast.t = now; return; }   // 同じバーコードを写したままのときは1回だけ
+    camLast = { c, t: now };
+    const isBook = /^(97[89]\d{10}|4[59]\d{11})$/.test(c) || /^\d{9}[\dX]$/.test(c);
+    if (!isBook) { camMsg("読んだ：" + c + "（本のバーコードではありません）"); return; }
+    try { navigator.vibrate && navigator.vibrate(60); } catch (e) {}
+    camMsg("読んだ：" + c);
+    closeEditor();
+    q.value = c;
+    $("f").requestSubmit();
+  }
+  function camStop(keepPanel) {
+    clearTimeout(camTimer);
+    if (camStream) { camStream.getTracks().forEach((t) => t.stop()); camStream = null; }
+    const v = $("camV"); if (v) v.srcObject = null;
+    if (!keepPanel) $("cam").hidden = true;
+  }
+  $("camBtn").addEventListener("click", () => { if (camStream) camStop(); else camOpen(); });
+  $("camClose").addEventListener("click", () => camStop());
+  document.addEventListener("visibilitychange", () => { if (document.hidden && camStream) camStop(); });
   $("tanBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; if (isTView()) { showHome(); } else showTan(); window.scrollTo(0, 0); updateTanBtn(); });
 
   // ================= ブラウザのように「戻る」 =================
   // 画面が変わるたびに履歴に積む。「← 戻る」ボタンとAndroidの戻る操作で1つずつさかのぼる
   const navStates = [];
   let navPos = 0, navQuiet = false;
-  const navKey = (v, ll) => v.type + "|" + (v.type === "list" ? (ll ? ll.q : "") : v.type === "set" ? v.si : v.type === "tdet" ? v.id : "");
+  const navKey = (v, ll) => v.type + "|" + (v.type === "list" ? (ll ? ll.q : "") : v.type === "set" ? v.si : v.type === "tdet" ? v.id : v.type === "tsrch" ? (tSrch ? tSrch.term : "") : "");
   function navBtn() { $("backBtn").setAttribute("aria-disabled", navPos > 0 ? "false" : "true"); }
   function navRecord() {
     const st = { v: Object.assign({}, curView), ll: lastList, y: 0 };
@@ -1730,7 +1819,8 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
   showList = function () { const r = _list.apply(this, arguments); navRecord(); return r; };
   showSet = function () { const r = _set.apply(this, arguments); navRecord(); return r; };
   showPurch = function () { const r = _purch.apply(this, arguments); navRecord(); return r; };
-  const _tan = showTan, _tdet = showTDet, _tpur = showTPur;
+  const _tan = showTan, _tdet = showTDet, _tpur = showTPur, _tsrch = showTSrch;
+  showTSrch = function () { const r = _tsrch.apply(this, arguments); navRecord(); return r; };
   showTan = function () { const r = _tan.apply(this, arguments); navRecord(); return r; };
   showTDet = function () { const r = _tdet.apply(this, arguments); navRecord(); return r; };
   showTPur = function () { const r = _tpur.apply(this, arguments); navRecord(); return r; };
@@ -1752,6 +1842,7 @@ td.own .mark.dc, .dctag { font-size: 9px; color: var(--good); font-weight: 700; 
       else if (v.type === "tan") showTan();
       else if (v.type === "tdet") showTDet(v.id);
       else if (v.type === "tpur") showTPur(false);
+      else if (v.type === "tsrch") showTSrch();
       else showHome();
       const y = st.y || 0;
       setTimeout(() => window.scrollTo(0, y), 0);
