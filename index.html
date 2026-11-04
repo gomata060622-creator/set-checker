@@ -2188,7 +2188,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   // 置き場所の記録：kind:"l"（1つの本×1つの段で1件。n＝その段にある冊数）。仕入れの記入と同じ保存場所に入れる
   // 注文：kind:"o"（プライスターの「全未配送商品住所リスト」のCSVから。1注文×1SKUで1件）
   // 棚の名前の一覧：kind:"c"・id "c_shelves"
-  const SHELF_DEF = ["A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3", "D1", "D2", "D3", "E1", "E2", "E3", "大型"];
+  // A0〜D0＝A〜D棚の一番上（大型）、G1・G2＝茶色のラック（大型の続き）、E＝空気清浄機の側、F＝D棚に向いている側
+  const SHELF_DEF = ["A0", "B0", "C0", "D0", "G1", "G2", "A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3", "D1", "D2", "D3", "E1", "E2", "E3", "E4", "F1", "F2", "F3", "F4"];
+  const SHELF_OLD = ["A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3", "D1", "D2", "D3", "E1", "E2", "E3", "大型"];
   function allKind(k) {
     const m = new Map(server);
     localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
@@ -2197,7 +2199,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
   function shelfList() {
     const cfg = allKind("c").find((e) => e.id === "c_shelves");
-    const list = (cfg && Array.isArray(cfg.list) && cfg.list.length ? cfg.list : SHELF_DEF).slice();
+    const list = SHELF_DEF.slice();
+    if (cfg && Array.isArray(cfg.list)) cfg.list.forEach((v) => { if (!list.includes(v) && !SHELF_OLD.includes(v)) list.push(v); });
     allKind("l").forEach((e) => { if (e.sh && !list.includes(e.sh)) list.push(e.sh); });
     return list;
   }
