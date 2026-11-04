@@ -270,6 +270,17 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
 .sheet input.small { font-size: 16px; width: 6em; padding: 6px 8px; }
 .sheet input.small.wide, .callout input.small.wide { width: 100%; text-align: left; }
 .callout input.small { font: inherit; width: 8em; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.shchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.shchip { display: inline-flex; flex-direction: column; align-items: center; min-width: 3.6em; padding: 4px 8px; font-size: 12px; line-height: 1.3; }
+.shchip b { font-size: 16px; }
+.shchip.on { background: var(--good); border-color: var(--good); color: #fff; }
+.shhead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.shbig { font-size: 32px; font-weight: 700; color: var(--good); }
+.pkrow { grid-template-columns: auto 1fr auto; }
+.pkshelf { font-size: 26px; font-weight: 700; color: var(--good); min-width: 2.4em; text-align: center; }
+.pkshelf small { font-size: 13px; }
+.pkshelf.none { color: var(--miss-fg); }
+.prow.pdone { opacity: .55; }
 </style>
 
 <div class="bar wrap">
@@ -282,7 +293,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
-    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="homeBtn" class="purchbtn" type="button">トップ</button></span>
+    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button">棚</button><button id="pickBtn" class="purchbtn" type="button">注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button></span>
   </div>
 </div>
 
@@ -879,6 +890,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     else if (curView.type === "tdet") showTDet(curView.id);
     else if (curView.type === "tfav") showTFav();
     else if (curView.type === "arr") showArr();
+    else if (curView.type === "shelf") showShelf();
+    else if (curView.type === "pick") showPick();
   }
   function updatePurchBtn() {
     const all = allEntries().filter((e) => !e.done);
@@ -1216,7 +1229,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     e.preventDefault();
     const v = q.value;
     if (!v.trim()) return;
-    if (curView.type === "arr") addArrival(v); else if (bookoffTag(v)) onTag(bookoffTag(v)); else if (isTView()) tLookup(v); else search(v);
+    if (curView.type === "arr") addArrival(v); else if (curView.type === "shelf") shelfInput(v); else if (curView.type === "pick") pickInput(v); else if (bookoffTag(v)) onTag(bookoffTag(v)); else if (isTView()) tLookup(v); else search(v);
     q.value = "";
     q.placeholder = "前回：" + v.trim() + "　／次のバーコードを読む";
     // 画面のキーボードだけ下げる。欄は選んだままなので、バーコードリーダーはそのまま入る
@@ -1260,7 +1273,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (q.getAttribute("inputmode") === "none") { q.removeAttribute("inputmode"); q.blur(); setTimeout(() => { try { q.focus(); } catch (e) {} }, 0); }
   });
   // 検索欄を空にしたら（×を押したときなど）、履歴のある最初の画面にもどる
-  q.addEventListener("input", () => { if (q.value === "" && curView.type !== "home" && curView.type !== "arr" && !isTView() && sheet.hidden) showHome(); });
+  q.addEventListener("input", () => { if (q.value === "" && curView.type !== "home" && curView.type !== "arr" && curView.type !== "shelf" && curView.type !== "pick" && !isTView() && sheet.hidden) showHome(); });
   // バーコード（13桁の数字）が入ったら、「探す」を押さなくても自動で探す
   let autoT = null;
   q.addEventListener("input", () => {
@@ -2108,8 +2121,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   function addArrival(raw) {
     const c = arrCode(raw);
     if (!c) { tToast(bookoffTag(raw) ? "値札は読まなくて大丈夫です" : "本のバーコードではないようです：" + String(raw).trim()); return; }
-    const data = { kind: "a", id: newId(), at: new Date().toISOString(), d: today(), j: c, t: titleOf(c), done: false };
+    const data = { kind: "a", id: newId(), at: new Date().toISOString(), d: today(), j: c, t: titleOf(c) || codeTitle(shelfCode(c) || c), done: false, sh: arrShelf || "" };
     change({ op: "set", id: data.id, data });
+    if (arrShelf) locAdd(shelfCode(c) || c, arrShelf, data.t);
     try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
     if (curView.type === "arr") showArr();
   }
@@ -2123,7 +2137,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       h += '<section class="day"><h2 class="num"><span>' + esc(d) + "（到着）</span><span>" + es.length + "冊</span></h2>";
       es.forEach((e) => {
         h += '<div class="prow arow" data-id="' + esc(e.id) + '"><div class="pt num">' + esc(e.j) + (e.t ? "　" + esc(e.t) : "") + (!e.done && cnt[e.j] > 1 ? '　<span class="pill kari">' + cnt[e.j] + "回読んだ</span>" : "") +
-          '</div><div class="pp num">' + esc(String(new Date(e.at).getHours()).padStart(2, "0") + ":" + String(new Date(e.at).getMinutes()).padStart(2, "0")) + '</div><span class="pill ' + (e.done ? "done" : "todo") + '">' + (e.done ? "反映済み" : "未反映") + "</span>" +
+          '</div><div class="pp num">' + (e.sh ? '<span class="pill">' + esc(e.sh) + "</span> " : "") + esc(String(new Date(e.at).getHours()).padStart(2, "0") + ":" + String(new Date(e.at).getMinutes()).padStart(2, "0")) + '</div><span class="pill ' + (e.done ? "done" : "todo") + '">' + (e.done ? "反映済み" : "未反映") + "</span>" +
           '<button type="button" class="pdel" data-id="' + esc(e.id) + '">消す</button></div>';
       });
       h += "</section>";
@@ -2133,12 +2147,13 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   function showArr() {
     curView = { type: "arr" };
     const al = allA().sort((a, b) => (a.at < b.at ? 1 : -1)), todo = al.filter((e) => !e.done);
-    let h = '<div class="callout"><div><b>到着：届いた本のバーコードを次々に読んでください</b>（読んだだけで記録されます。Keepaは使いません）</div>' +
+    let h = arrShelfHtml() + '<div class="callout"><div><b>到着：届いた本のバーコードを次々に読んでください</b>（読んだだけで記録されます。Keepaは使いません）</div>' +
       '<div class="note">まだExcelに入っていない到着：' + todo.length + "冊。パソコンの仕入れ一覧で「Excel用に保存」→ 00仕入れリストの仕入予定シートの取り込みボタンで、本年度仕入分に入ります。間違えて読んだものは「消す」で取り消せます。</div></div>";
     if (!al.length) h += '<div class="empty"><b>まだ読んでいません</b><div class="note">カメラ（📷）かバーコードリーダーで読んでください。</div></div>';
     else h += arrDays(al.filter((e) => !e.done)) + (al.some((e) => e.done) ? '<div class="note">反映済みの到着は、仕入れ一覧で消せます。</div>' : "");
     main.innerHTML = h;
-    main.querySelectorAll(".pdel").forEach((b) => b.addEventListener("click", (ev) => { ev.stopPropagation(); change({ op: "delete", id: b.dataset.id }); }));
+    main.querySelectorAll(".pdel").forEach((b) => b.addEventListener("click", (ev) => { ev.stopPropagation(); arrDelete(b.dataset.id); }));
+    bindArrShelf();
     updateArrBtn();
     refocus();
   }
@@ -2168,6 +2183,389 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   $("arrBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; if (curView.type === "arr") showHome(); else showArr(); window.scrollTo(0, 0); });
   $("tanBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; if (isTView()) { showHome(); } else showTan(); window.scrollTo(0, 0); updateTanBtn(); });
 
+
+  // ================= 棚（2階の自己発送の在庫の置き場所）と、注文の棚 =================
+  // 置き場所の記録：kind:"l"（1つの本×1つの段で1件。n＝その段にある冊数）。仕入れの記入と同じ保存場所に入れる
+  // 注文：kind:"o"（プライスターの「全未配送商品住所リスト」のCSVから。1注文×1SKUで1件）
+  // 棚の名前の一覧：kind:"c"・id "c_shelves"
+  const SHELF_DEF = ["A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3", "D1", "D2", "D3", "E1", "E2", "E3", "大型"];
+  function allKind(k) {
+    const m = new Map(server);
+    localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
+    pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
+    return [...m.values()].filter((e) => e && e.id && e.kind === k);
+  }
+  function shelfList() {
+    const cfg = allKind("c").find((e) => e.id === "c_shelves");
+    const list = (cfg && Array.isArray(cfg.list) && cfg.list.length ? cfg.list : SHELF_DEF).slice();
+    allKind("l").forEach((e) => { if (e.sh && !list.includes(e.sh)) list.push(e.sh); });
+    return list;
+  }
+  const shelfIdx = (sh) => { const i = shelfList().indexOf(sh); return i < 0 ? 999 : i; };
+  function shelfCounts() {
+    const m = new Map();
+    allKind("l").forEach((e) => { if (e.n > 0) m.set(e.sh, (m.get(e.sh) || 0) + e.n); });
+    return m;
+  }
+  // 読んだバーコードをそろえる（ISBN-10は13桁にする）
+  function shelfCode(raw) {
+    const c = arrCode(raw);
+    if (!c) return null;
+    return /^\d{9}[\dX]$/.test(c) ? isbn10to13(c) : c;
+  }
+  // 書名（単品の一覧・セットデータの巻から）
+  function codeTitle(code) {
+    const t = titleOf(code);
+    if (t) return t;
+    try {
+      const hit = codeIdx && (codeIdx.get(code) || []).find((x) => x[1] >= 0);
+      if (hit && DATA) { const s = DATA.sets[hit[0]]; const v = s.vol[hit[1]]; return (s.t || "") + "（" + (hit[1] + 1) + "巻" + (v[0] ? "：" + v[0] : "") + "）"; }
+    } catch (e) {}
+    return "";
+  }
+  const locId = (code, sh) => "L_" + code + "_" + sh;
+  function locGet(code, sh) { return allKind("l").find((e) => e.id === locId(code, sh)) || null; }
+  function locAdd(code, sh, t, al) {
+    const cur = locGet(code, sh);
+    const data = { kind: "l", id: locId(code, sh), j: code, sh, n: (cur ? cur.n : 0) + 1, t: t || (cur && cur.t) || codeTitle(code), al: al || (cur && cur.al) || [], at: new Date().toISOString() };
+    change({ op: "set", id: data.id, data });
+  }
+  function locSub(code, sh) {
+    const cur = locGet(code, sh);
+    if (!cur) return;
+    if (cur.n <= 1) change({ op: "delete", id: cur.id });
+    else change({ op: "set", id: cur.id, data: Object.assign({}, cur, { n: cur.n - 1, at: new Date().toISOString() }) });
+  }
+
+  // ---------- 棚の画面：段を選んで、しまう本・今ある本のバーコードを読む ----------
+  let shelfSel = "";
+  try { shelfSel = localStorage.getItem("sc_shelf") || ""; } catch (e) {}
+  let shelfSess = [];          // この段で今読んだ本（取り消し用）
+  let shelfMode = "scan";      // scan：読む／list：中身を見る
+  let shelfSrch = null;        // セット名で探した結果
+  let shelfClearAsk = false;
+  function shelfChips(sel, counts, sorted) {
+    let list = shelfList();
+    if (sorted) list = list.slice().sort((a, b) => (counts.get(a) || 0) - (counts.get(b) || 0) || shelfIdx(a) - shelfIdx(b));
+    return '<div class="shchips">' + list.map((sh) => '<button type="button" class="shchip' + (sh === sel ? " on" : "") + '" data-sh="' + esc(sh) + '"><b>' + esc(sh) + '</b><span class="num">' + (counts.get(sh) || 0) + "冊</span></button>").join("") + "</div>";
+  }
+  function showShelf() {
+    curView = { type: "shelf" };
+    const counts = shelfCounts();
+    const total = [...counts.values()].reduce((a, b) => a + b, 0);
+    let h = '<div class="callout"><div><b>棚：段を選んでから、その段の本のバーコードを読んでください</b></div>' +
+      '<div class="note">今ある本の登録や、本を別の段に移したときに使います（届いた本は「到着」で段を選んで読めば、ここで読まなくても記録されます）。前に別の段で記録した本を読むと、この段に移します。セットはセット名を打って探してください。記録した本：全部で' + total + "冊</div>" +
+      shelfChips(shelfSel, counts, false) +
+      '<div class="actions"><input id="shAdd" class="small" placeholder="新しい段の名前"><button type="button" id="shAddBtn">段を足す</button></div></div>';
+    if (!shelfSel) {
+      h += '<div class="empty"><b>まず上で段を選んでください</b></div>';
+    } else {
+      h += '<div class="shhead"><span class="shbig">' + esc(shelfSel) + '</span><span class="num">' + (counts.get(shelfSel) || 0) + "冊</span>" +
+        '<span class="actions"><button type="button" id="shModeBtn">' + (shelfMode === "list" ? "読む画面にもどる" : "この段の中身を見る") + "</button></span></div>";
+      if (shelfSrch) {
+        h += '<section class="day"><h2><span>「' + esc(shelfSrch.term) + '」のセット</span><span><button type="button" id="shSrchClose">閉じる</button></span></h2>';
+        if (!shelfSrch.hits.length) h += '<div class="prow"><div class="pt">見つかりませんでした</div></div>';
+        shelfSrch.hits.forEach((si) => { const s = DATA.sets[si]; h += '<div class="prow"><div class="pt">' + esc(s.t) + '</div><div class="pp num">' + esc(s.a || "") + '</div><button type="button" class="shSetAdd" data-si="' + si + '">' + esc(shelfSel) + "に置く</button></div>"; });
+        h += "</section>";
+      }
+      if (shelfMode === "list") {
+        const items = allKind("l").filter((e) => e.sh === shelfSel && e.n > 0).sort((a, b) => String(a.t || a.j).localeCompare(String(b.t || b.j), "ja"));
+        h += '<section class="day"><h2><span>' + esc(shelfSel) + "にある本</span><span>" + items.length + "種類</span></h2>";
+        if (!items.length) h += '<div class="prow"><div class="pt">まだ記録がありません</div></div>';
+        items.forEach((e) => { h += '<div class="prow"><div class="pt">' + esc(e.t || "（書名なし）") + '<div class="pv num">' + esc(e.j) + (e.n > 1 ? "　" + e.n + "冊" : "") + '</div></div><div class="pp"></div><button type="button" class="pdel shSub" data-j="' + esc(e.j) + '">1冊消す</button></div>'; });
+        h += "</section>";
+        h += '<div class="actions"><button type="button" id="shClear">' + (shelfClearAsk ? "本当に" + esc(shelfSel) + "の記録を全部消す" : "この段の記録を全部消す（読み直すとき）") + "</button></div>";
+      } else {
+        const ss = shelfSess.filter((x) => x.sh === shelfSel);
+        if (!ss.length) h += '<div class="empty"><b>' + esc(shelfSel) + 'の本のバーコードを読んでください</b><div class="note">カメラ（📷）かバーコードリーダーで、端から続けて読めます。</div></div>';
+        else {
+          h += '<section class="day"><h2><span>今読んだ本</span><span>' + ss.length + "冊</span></h2>";
+          ss.forEach((x) => {
+            h += '<div class="prow"><div class="pt">' + esc(x.t || "（書名なし）") + '<div class="pv num">' + esc(x.j) + (x.from ? "　" + esc(x.from) + "から移しました" : "") + "</div></div>" +
+              (x.from ? '<button type="button" class="shBoth" data-k="' + esc(x.k) + '">移したのではない（' + esc(x.from) + "にもある）</button>" : '<div class="pp"></div>') +
+              '<button type="button" class="pdel shUndo" data-k="' + esc(x.k) + '">取り消す</button></div>';
+          });
+          h += "</section>";
+        }
+      }
+    }
+    main.innerHTML = h;
+    main.querySelectorAll(".shchip").forEach((b) => b.addEventListener("click", () => {
+      shelfSel = b.dataset.sh; shelfClearAsk = false; shelfSrch = null;
+      try { localStorage.setItem("sc_shelf", shelfSel); } catch (e) {}
+      showShelf();
+    }));
+    const ab = $("shAddBtn");
+    if (ab) ab.addEventListener("click", () => {
+      const v = String($("shAdd").value || "").normalize("NFKC").trim().toUpperCase();
+      if (!v) return;
+      const list = shelfList();
+      if (!list.includes(v)) { list.push(v); change({ op: "set", id: "c_shelves", data: { kind: "c", id: "c_shelves", list, at: new Date().toISOString() } }); }
+      shelfSel = v; try { localStorage.setItem("sc_shelf", v); } catch (e) {}
+      showShelf();
+    });
+    const mb = $("shModeBtn");
+    if (mb) mb.addEventListener("click", () => { shelfMode = shelfMode === "list" ? "scan" : "list"; shelfClearAsk = false; showShelf(); });
+    const sc = $("shSrchClose");
+    if (sc) sc.addEventListener("click", () => { shelfSrch = null; showShelf(); });
+    main.querySelectorAll(".shSetAdd").forEach((b) => b.addEventListener("click", () => {
+      const s = DATA.sets[+b.dataset.si];
+      const al = [String(s.a || "").toUpperCase()].concat((s.own || []).map((o) => String(o.a || "").toUpperCase())).filter((a, i, arr) => a && arr.indexOf(a) === i);
+      shelfPut(String(s.a || al[0] || "").toUpperCase(), s.t, al);
+      shelfSrch = null; showShelf();
+    }));
+    main.querySelectorAll(".shSub").forEach((b) => b.addEventListener("click", () => locSub(b.dataset.j, shelfSel)));
+    const cl = $("shClear");
+    if (cl) cl.addEventListener("click", () => {
+      if (!shelfClearAsk) { shelfClearAsk = true; showShelf(); return; }
+      shelfClearAsk = false;
+      allKind("l").filter((e) => e.sh === shelfSel).forEach((e) => change({ op: "delete", id: e.id }));
+      tToast(shelfSel + "の記録を消しました");
+    });
+    main.querySelectorAll(".shUndo").forEach((b) => b.addEventListener("click", () => {
+      const x = shelfSess.find((y) => y.k === b.dataset.k); if (!x) return;
+      shelfSess = shelfSess.filter((y) => y !== x);
+      locSub(x.j, x.sh);
+      if (x.from) locAdd(x.j, x.from, x.t, x.al);
+      showShelf();
+    }));
+    main.querySelectorAll(".shBoth").forEach((b) => b.addEventListener("click", () => {
+      const x = shelfSess.find((y) => y.k === b.dataset.k); if (!x || !x.from) return;
+      locAdd(x.j, x.from, x.t, x.al);
+      x.from = "";
+      showShelf();
+    }));
+    updateShelfBtns();
+    refocus();
+  }
+  // この段に置く（前に別の段で記録してあれば、そこから1冊移す）
+  function shelfPut(code, t, al) {
+    const sh = shelfSel;
+    if (!sh || !code) return;
+    const other = allKind("l").filter((e) => e.j === code && e.sh !== sh && e.n > 0).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+    const title = t || (other && other.t) || codeTitle(code);
+    if (other) locSub(code, other.sh);
+    locAdd(code, sh, title, al || (other && other.al));
+    shelfSess.unshift({ k: newId(), j: code, sh, t: title, al: al || (other && other.al) || [], from: other ? other.sh : "" });
+    try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
+    if (other) tToast(other.sh + " → " + sh + "に移しました");
+    if (curView.type === "shelf") showShelf();
+  }
+  function shelfInput(raw) {
+    const code = shelfCode(raw);
+    if (code) {
+      if (!shelfSel) { tToast("先に段を選んでください"); return; }
+      shelfPut(code);
+      return;
+    }
+    if (bookoffTag(raw)) { tToast("値札は読まなくて大丈夫です"); return; }
+    // セット名で探す
+    const term = String(raw || "").trim();
+    if (!term) return;
+    const n = norm(term);
+    const hits = [];
+    if (DATA && textIdx) textIdx.forEach((x) => { if (hits.length < 30 && x.t.includes(n)) hits.push(x.si); });
+    shelfSrch = { term, hits };
+    showShelf();
+  }
+
+  // ---------- 到着の画面の「置く段」 ----------
+  let arrShelf = "";
+  try { arrShelf = localStorage.getItem("sc_arrShelf") || ""; } catch (e) {}
+  function arrShelfHtml() {
+    const counts = shelfCounts();
+    return '<div class="callout"><div><b>置く段</b>（選んでから読むと、その段に置いた記録も一緒に残ります。冊数の少ない段から順に並べています）</div>' +
+      '<div class="shchips"><button type="button" class="shchip ash' + (!arrShelf ? " on" : "") + '" data-sh=""><b>棚に置かない</b><span>FBAなど</span></button></div>' +
+      shelfChips(arrShelf, counts, true).replace(/class="shchip/g, 'class="shchip ash') + "</div>";
+  }
+  function bindArrShelf() {
+    main.querySelectorAll(".ash").forEach((b) => b.addEventListener("click", () => {
+      arrShelf = b.dataset.sh || "";
+      try { localStorage.setItem("sc_arrShelf", arrShelf); } catch (e) {}
+      showArr();
+    }));
+  }
+  function arrDelete(id) {
+    const e = allA().find((x) => x.id === id);
+    if (e && e.sh && !e.done) locSub(shelfCode(e.j) || e.j, e.sh);
+    change({ op: "delete", id });
+  }
+
+  // ---------- 注文の棚：プライスターの「全未配送商品住所リスト」のCSVを読む ----------
+  function csvRows(t) {
+    const rows = []; let row = [], f = "", qt = false;
+    for (let i = 0; i < t.length; i++) {
+      const c = t[i];
+      if (qt) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else qt = false; } else f += c; }
+      else if (c === '"') qt = true;
+      else if (c === ",") { row.push(f); f = ""; }
+      else if (c === "\n" || c === "\r") { if (c === "\r" && t[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+      else f += c;
+    }
+    if (f || row.length) { row.push(f); rows.push(row); }
+    return rows.filter((r) => r.some((v) => String(v).trim()));
+  }
+  // SKUの最後がASIN（-c・-jなどが付いていれば外す）
+  function skuAsin(sku) {
+    let s = String(sku || "").trim().toUpperCase();
+    for (let i = 0; i < 3 && /-[A-Z0-9]{1,3}$/.test(s); i++) s = s.replace(/-[A-Z0-9]{1,3}$/, "");
+    const a = s.slice(-10);
+    return /^(B0[0-9A-Z]{8}|\d{9}[\dX])$/.test(a) ? a : "";
+  }
+  function readOrders(buf) {
+    let t;
+    try { t = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (e) { t = new TextDecoder("shift_jis").decode(buf); }
+    t = t.replace(/^﻿/, "");
+    const rows = csvRows(t);
+    if (rows.length < 1) throw new Error("中身がありません");
+    const hd = rows[0].map((x) => String(x).split(/\r?\n/)[0].trim().toLowerCase());
+    const col = (re) => hd.findIndex((x) => re.test(x));
+    const iO = col(/amazon-order-id|order-id|注文番号|amazonorderid/), iS = col(/^sku$|商品sku|sku/), iT = col(/^title$|商品名|product-name/), iA = col(/^asin$/), iQ = col(/数量|個数|quantity/);
+    if (iO < 0 || iS < 0) throw new Error("注文番号とSKUの列が見つかりません");
+    const out = [];
+    rows.slice(1).forEach((r) => {
+      const oid = String(r[iO] || "").trim();
+      if (!oid) return;
+      const skus = String(r[iS] || "").split(",").map((x) => x.trim()).filter(Boolean);
+      const title = iT >= 0 ? String(r[iT] || "").trim() : "";
+      const ts = title.split("/");
+      skus.forEach((sku, k) => {
+        const a = (iA >= 0 && skus.length === 1 ? String(r[iA] || "").trim().toUpperCase() : "") || skuAsin(sku);
+        const tt = skus.length === 1 ? title : ts.length === skus.length ? ts[k].trim() : title;
+        out.push({ kind: "o", id: "o_" + oid + "_" + sku, oid, sku, a, t: tt.replace(/\s*\[[^\]]*\]/g, "").trim(), q: iQ >= 0 ? (+r[iQ] || 1) : 1, multi: skus.length > 1 ? skus.length : 0 });
+      });
+    });
+    return out;
+  }
+  function loadOrders(buf) {
+    const list = readOrders(buf);
+    const now = new Date().toISOString();
+    const old = new Map(allKind("o").map((e) => [e.id, e]));
+    const keep = new Set();
+    let add = 0;
+    list.forEach((o) => {
+      keep.add(o.id);
+      const cur = old.get(o.id);
+      if (cur) return;   // もう読んである注文（取ったかどうかはそのまま）
+      change({ op: "set", id: o.id, data: Object.assign(o, { got: 0, at: now, d: today() }) });
+      add++;
+    });
+    // CSVにない注文は発送が済んだもの → 消す
+    let gone = 0;
+    old.forEach((e, id) => { if (!keep.has(id)) { change({ op: "delete", id }); gone++; } });
+    return { n: list.length, add, gone };
+  }
+  // ASIN → その本のバーコード（ISBN・セットのASIN・Keepaで調べたJAN）
+  let asinEan = {};
+  try { asinEan = JSON.parse(localStorage.getItem("sc_asinean") || "{}") || {}; } catch (e) { asinEan = {}; }
+  const asking = new Set(), askFail = new Map();
+  function codesOf(o) {
+    const a = String(o.a || "").toUpperCase();
+    const s = new Set();
+    if (!a) return s;
+    s.add(a);
+    if (/^\d{9}[\dX]$/.test(a)) s.add(isbn10to13(a));
+    (asinEan[a] || []).forEach((x) => s.add(x));
+    (o.e || []).forEach((x) => s.add(x));
+    TLIST.concat(allT()).forEach((x) => { const xa = String(x.asin || x.a || "").toUpperCase(), xj = x.jan || x.j; if (xa === a && xj) s.add(String(xj)); });
+    return s;
+  }
+  function locsOf(o) {
+    const cs = codesOf(o), a = String(o.a || "").toUpperCase();
+    return allKind("l").filter((e) => e.n > 0 && (cs.has(e.j) || (a && (e.al || []).includes(a)))).sort((x, y) => shelfIdx(x.sh) - shelfIdx(y.sh));
+  }
+  // 棚の記録が見つからないB0のASINは、KeepaでJANを調べる（1冊1トークンほど・調べたものは覚えておく）
+  async function askEan(o) {
+    const a = String(o.a || "").toUpperCase();
+    if (!KK || !/^B0/.test(a) || asinEan[a] || asking.has(a) || Date.now() - (askFail.get(a) || 0) < 600000) return;
+    asking.add(a);
+    try {
+      const j = await keepa("asin=" + a);
+      const p = j.products && j.products[0];
+      const e = [].concat((p && p.eanList) || [], (p && p.upcList) || []).map(String);
+      asinEan[a] = e.length ? e : ["-"];
+      try { localStorage.setItem("sc_asinean", JSON.stringify(asinEan)); } catch (x) {}
+      if (e.length) change({ op: "set", id: o.id, data: Object.assign({}, o, { e }) });
+      else if (curView.type === "pick") showPick();
+    } catch (x) { asking.delete(a); askFail.set(a, Date.now()); }
+  }
+  let pickMsg = "";
+  function showPick() {
+    curView = { type: "pick" };
+    const os = allKind("o");
+    const rows = os.map((o) => ({ o, ls: locsOf(o), done: (o.got || 0) >= (o.q || 1) }));
+    const open = rows.filter((r) => !r.done), done = rows.filter((r) => r.done);
+    open.sort((x, y) => (x.ls.length ? shelfIdx(x.ls[0].sh) : 9999) - (y.ls.length ? shelfIdx(y.ls[0].sh) : 9999) || String(x.o.t).localeCompare(String(y.o.t), "ja"));
+    let h = '<div class="callout"><div><b>注文の棚</b>（取りに行く本を、段の順に並べています）</div>' +
+      '<div class="note">パソコンでプライスターの「未発送の注文」→「送り状発行用CSVのダウンロード」→「全未配送商品住所リスト」で保存したCSVを、下のボタンで読み込んでください（スマホでもパソコンでも、同じ一覧が出ます）。発送が済んだ注文は、次に読み込んだときに消えます。本を取ったら「取った」を押すか、バーコードを読んでください（棚の記録から1冊減ります）。</div>' +
+      '<div class="actions"><label class="btn filebtn" for="pickFile">注文のCSVを読み込む<input id="pickFile" type="file" accept=".csv,text/csv"></label></div>' +
+      (pickMsg ? '<div class="note"><b>' + esc(pickMsg) + "</b></div>" : "") + "</div>";
+    if (!os.length) h += '<div class="empty"><b>まだ注文を読み込んでいません</b></div>';
+    const rowHtml = (r) => {
+      const o = r.o, a = String(o.a || "").toUpperCase();
+      const sh = r.ls.length ? r.ls.map((l) => esc(l.sh) + (l.n > 1 ? "<small>×" + l.n + "</small>" : "")).join("・") : "";
+      if (!r.ls.length && !r.done) askEan(o);
+      const why = !r.ls.length ? (/^B0/.test(a) && !KK ? "棚の記録なし（Keepaのキーがないので、JANを調べられません）" : /^B0/.test(a) && asking.has(a) && !asinEan[a] ? "棚の記録なし（KeepaでJANを調べています）" : "棚の記録なし") : "";
+      return '<div class="prow pkrow' + (r.done ? " pdone" : "") + '"><div class="pkshelf' + (sh ? "" : " none") + '">' + (sh || "？") + '</div><div class="pt">' + esc(o.t || "（書名なし）") +
+        '<div class="pv num">' + esc(o.sku) + (o.q > 1 ? "　" + o.q + "冊" : "") + (o.multi ? "　（同じ注文に" + o.multi + "冊）" : "") + (why ? "　" + esc(why) : "") + "</div></div>" +
+        '<button type="button" class="' + (r.done ? "pkBack" : "pkGot btn-primary") + '" data-id="' + esc(o.id) + '">' + (r.done ? "戻す" : "取った") + "</button></div>";
+    };
+    if (open.length) h += '<section class="day"><h2><span>取りに行く本</span><span>' + open.length + "冊</span></h2>" + open.map(rowHtml).join("") + "</section>";
+    else if (os.length) h += '<div class="empty"><b>全部取りました</b></div>';
+    if (done.length) h += '<section class="day"><h2><span>取った本</span><span>' + done.length + "冊</span></h2>" + done.map(rowHtml).join("") + "</section>";
+    main.innerHTML = h;
+    $("pickFile").addEventListener("change", (ev) => {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => {
+        try { const r = loadOrders(new Uint8Array(rd.result)); pickMsg = "読み込みました：" + r.n + "冊（新しい注文 " + r.add + "冊・発送済みで消した注文 " + r.gone + "冊）"; }
+        catch (e) { pickMsg = "読み込めませんでした：" + ((e && e.message) || e) + "（「全未配送商品住所リスト」のCSVを選んでください）"; }
+        showPick();
+      };
+      rd.readAsArrayBuffer(f);
+      ev.target.value = "";
+    });
+    main.querySelectorAll(".pkGot").forEach((b) => b.addEventListener("click", () => pickGot(b.dataset.id)));
+    main.querySelectorAll(".pkBack").forEach((b) => b.addEventListener("click", () => pickBack(b.dataset.id)));
+    updateShelfBtns();
+    refocus();
+  }
+  function pickGot(id, viaCode) {
+    const o = allKind("o").find((x) => x.id === id); if (!o) return;
+    const ls = locsOf(o);
+    const l = (viaCode && ls.find((x) => x.j === viaCode)) || ls[0];
+    if (l) locSub(l.j, l.sh);
+    change({ op: "set", id: o.id, data: Object.assign({}, o, { got: (o.got || 0) + 1, from: l ? [l.j, l.sh, l.t, l.al || []] : null }) });
+  }
+  function pickBack(id) {
+    const o = allKind("o").find((x) => x.id === id); if (!o) return;
+    if (o.from) locAdd(o.from[0], o.from[1], o.from[2], o.from[3]);
+    change({ op: "set", id: o.id, data: Object.assign({}, o, { got: 0, from: null }) });
+  }
+  // 注文の画面でバーコードを読んだら、その本を「取った」にする
+  function pickInput(raw) {
+    const code = shelfCode(raw);
+    if (!code) { tToast("本のバーコードではないようです：" + String(raw).trim()); return; }
+    const o = allKind("o").find((x) => (x.got || 0) < (x.q || 1) && codesOf(x).has(code));
+    if (!o) { tToast("この本は取りに行く一覧にありません：" + code); return; }
+    pickGot(o.id, code);
+    try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
+    tToast("取った：" + (o.t || code));
+  }
+  function updateShelfBtns() {
+    const b = $("shelfBtn"), p = $("pickBtn");
+    if (b) { b.textContent = curView.type === "shelf" ? "棚中" : "棚"; b.classList.toggle("dcon", curView.type === "shelf"); }
+    if (p) {
+      const n = allKind("o").filter((o) => (o.got || 0) < (o.q || 1)).length;
+      p.innerHTML = (curView.type === "pick" ? "注文中" : "注文") + (n ? "（" + n + "）" : "");
+      p.classList.toggle("dcon", curView.type === "pick");
+    }
+  }
+  $("shelfBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; if (curView.type === "shelf") showHome(); else showShelf(); window.scrollTo(0, 0); });
+  $("pickBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; if (curView.type === "pick") showHome(); else { pickMsg = ""; showPick(); } window.scrollTo(0, 0); });
+  { const _upb = updatePurchBtn; updatePurchBtn = function () { const r = _upb.apply(this, arguments); try { updateShelfBtns(); } catch (e) {} return r; }; }
+
   // ================= ブラウザのように「戻る」 =================
   // 画面が変わるたびに履歴に積む。「← 戻る」ボタンとAndroidの戻る操作で1つずつさかのぼる
   const navStates = [];
@@ -2191,7 +2589,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
   window.addEventListener("scroll", () => { const st = navStates[navPos]; if (st) st.y = window.scrollY; }, { passive: true });
   const _home = showHome, _list = showList, _set = showSet, _purch = showPurch, _rerender = rerender;
-  showHome = function () { const r = _home.apply(this, arguments); navRecord(); try { updateTanBtn(); updateArrBtn(); } catch (e) {} return r; };
+  showHome = function () { const r = _home.apply(this, arguments); navRecord(); try { updateTanBtn(); updateArrBtn(); updateShelfBtns(); } catch (e) {} return r; };
   showList = function () { const r = _list.apply(this, arguments); navRecord(); return r; };
   showSet = function () { const r = _set.apply(this, arguments); navRecord(); return r; };
   showPurch = function () { const r = _purch.apply(this, arguments); navRecord(); return r; };
@@ -2199,6 +2597,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   showTFav = function () { const r = _tfav.apply(this, arguments); navRecord(); return r; };
   const _arr = showArr;
   showArr = function () { const r = _arr.apply(this, arguments); navRecord(); return r; };
+  const _shelf = showShelf, _pick = showPick;
+  showShelf = function () { const r = _shelf.apply(this, arguments); navRecord(); return r; };
+  showPick = function () { const r = _pick.apply(this, arguments); navRecord(); return r; };
   showTSrch = function () { const r = _tsrch.apply(this, arguments); navRecord(); return r; };
   showTan = function () { const r = _tan.apply(this, arguments); navRecord(); return r; };
   showTDet = function () { const r = _tdet.apply(this, arguments); navRecord(); return r; };
@@ -2224,6 +2625,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       else if (v.type === "tsrch") showTSrch();
       else if (v.type === "tfav") showTFav();
       else if (v.type === "arr") showArr();
+      else if (v.type === "shelf") showShelf();
+      else if (v.type === "pick") showPick();
       else showHome();
       const y = st.y || 0;
       setTimeout(() => window.scrollTo(0, y), 0);
