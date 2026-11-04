@@ -805,6 +805,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
     return [...m.values()].filter((e) => e && e.id && e.kind === "f");
   }
+  let undoAsk = false;   // 「未反映に戻す」は2回押したときだけ戻す
   // 前に「Excel用に保存」で反映済みにした本のうち、まだ反映済みのものの数（未反映に戻すボタン用）
   function lastSavedN() {
     let ids = []; try { ids = JSON.parse(localStorage.getItem("sc_lastSaved") || "[]"); } catch (e) {}
@@ -1049,7 +1050,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       '<div class="note">パソコンでこのページを開いて「Excel用に保存」を押し、セットデータの「まとめて実行」を押すと、セット本はセットデータに、単品と到着は00仕入れリストに入ります（00仕入れリストも開いておく）。</div>' +
       '<div class="actions"><button id="pSave" class="btn-primary"' + (todo.length || ttodo.length || atodo.length ? "" : " disabled") + ">Excel用に保存（セット " + todo.length + "冊・単品 " + ttodo.length + "冊・到着 " + atodo.length + "冊）</button></div>" +
       (waitIds.length || tWait.length || aWait.length ? '<div>Excelに取り込めたら押してください：<div class="actions" style="margin-top:6px"><button id="pDone">保存した ' + (waitIds.length + tWait.length + aWait.length) + "冊を反映済みにする</button></div></div>" : "") +
-      (lastSavedN() ? '<div class="note">「Excel用に保存」を押すと、保存した本はそのまま反映済みになります。保存したファイルをなくしたときは：<div class="actions" style="margin-top:6px"><button id="pUndo">前に保存した ' + lastSavedN() + "冊を未反映に戻す</button></div></div>" : "") +
+      (lastSavedN() ? '<div class="note">「Excel用に保存」を押すと、保存した本はそのまま反映済みになります（もう押すボタンはありません）。<br>保存したファイルを消してしまったときだけ：<button id="pUndo" class="linkbtn" style="font-size:12px;padding:2px 6px">' + (undoAsk ? "本当に未反映に戻す（" + lastSavedN() + "冊）" : "保存し直したいので未反映に戻す") + "</button></div>" : "") +
       '<div id="pMsg" class="note" hidden></div></div>';
     if (!list.length && !tl.length && !al.length) h += '<div class="empty"><b>まだ記入はありません</b><div class="note">セットの表で、買った巻の「なし」を押すと値段を記入できます。</div></div>';
     if (tl.length) h += '<h2 class="sec">単品（' + ttodo.length + "冊が未反映）</h2>" + tPurDays(tl);
@@ -1114,6 +1115,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     });
     const pu = $("pUndo");
     if (pu) pu.addEventListener("click", () => {
+      if (!undoAsk) { undoAsk = true; showPurch(true); return; }
+      undoAsk = false;
       let ids = []; try { ids = JSON.parse(localStorage.getItem("sc_lastSaved") || "[]"); } catch (e) {}
       allEntries().concat(allT(), allA()).filter((e) => ids.includes(e.id) && e.done).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: false }) }));
       try { localStorage.setItem("sc_lastSaved", "[]"); } catch (e) {}
