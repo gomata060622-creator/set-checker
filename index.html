@@ -293,7 +293,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
-    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button">棚</button><button id="pickBtn" class="purchbtn" type="button">注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button></span>
+    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button></span>
   </div>
 </div>
 
@@ -2373,9 +2373,10 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
 
   // ---------- 到着の画面の「置く段」 ----------
+  // 2026/11/5：棚は2階の写真で付けて00仕入れリストのAA列に入れることにしたので、到着では段を選ばない
   let arrShelf = "";
-  try { arrShelf = localStorage.getItem("sc_arrShelf") || ""; } catch (e) {}
   function arrShelfHtml() {
+    if (!arrShelf) return "";
     const counts = shelfCounts();
     return '<div class="callout"><div><b>置く段</b>（選んでから読むと、その段に置いた記録も一緒に残ります。冊数の少ない段から順に並べています）</div>' +
       '<div class="shchips"><button type="button" class="shchip ash' + (!arrShelf ? " on" : "") + '" data-sh=""><b>棚に置かない</b><span>FBAなど</span></button></div>' +
