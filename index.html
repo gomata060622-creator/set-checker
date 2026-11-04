@@ -805,6 +805,12 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
     return [...m.values()].filter((e) => e && e.id && e.kind === "f");
   }
+  // 前に「Excel用に保存」で反映済みにした本のうち、まだ反映済みのものの数（未反映に戻すボタン用）
+  function lastSavedN() {
+    let ids = []; try { ids = JSON.parse(localStorage.getItem("sc_lastSaved") || "[]"); } catch (e) {}
+    if (!ids.length) return 0;
+    return allEntries().concat(allT(), allA()).filter((e) => ids.includes(e.id) && e.done).length;
+  }
   const cellKey = (sh, gc, oc, v) => sh + "|" + gc + "|" + oc + "|" + v;
   // マスごとの記入（一番新しいもの）。記入が変わったら作り直す
   let entCache = null;
@@ -1043,6 +1049,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       '<div class="note">パソコンでこのページを開いて「Excel用に保存」を押し、セットデータの「まとめて実行」を押すと、セット本はセットデータに、単品と到着は00仕入れリストに入ります（00仕入れリストも開いておく）。</div>' +
       '<div class="actions"><button id="pSave" class="btn-primary"' + (todo.length || ttodo.length || atodo.length ? "" : " disabled") + ">Excel用に保存（セット " + todo.length + "冊・単品 " + ttodo.length + "冊・到着 " + atodo.length + "冊）</button></div>" +
       (waitIds.length || tWait.length || aWait.length ? '<div>Excelに取り込めたら押してください：<div class="actions" style="margin-top:6px"><button id="pDone">保存した ' + (waitIds.length + tWait.length + aWait.length) + "冊を反映済みにする</button></div></div>" : "") +
+      (lastSavedN() ? '<div class="note">「Excel用に保存」を押すと、保存した本はそのまま反映済みになります。保存したファイルをなくしたときは：<div class="actions" style="margin-top:6px"><button id="pUndo">前に保存した ' + lastSavedN() + "冊を未反映に戻す</button></div></div>" : "") +
       '<div id="pMsg" class="note" hidden></div></div>';
     if (!list.length && !tl.length && !al.length) h += '<div class="empty"><b>まだ記入はありません</b><div class="note">セットの表で、買った巻の「なし」を押すと値段を記入できます。</div></div>';
     if (tl.length) h += '<h2 class="sec">単品（' + ttodo.length + "冊が未反映）</h2>" + tPurDays(tl);
@@ -1088,9 +1095,29 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       if (todo.length) fs.push(exportCsv(todo, true));
       if (ttodo.length) fs.push(tExportCsv(ttodo, true));
       if (atodo.length) fs.push(aExportCsv(atodo));
+      const okAll = fs.length && fs.every(Boolean);
+      // 2026/11/5：保存できたら、そのまま反映済みにする（「反映済みにする」を押し忘れて、次の保存に同じ本が入らないように）
+      //   取り込みに失敗しても、ファイルはダウンロードフォルダに残るので、次のまとめて実行でもう一度読まれる
+      if (okAll) {
+        const saved = [];
+        todo.forEach((e) => { saved.push(e.id); change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }); });
+        ttodo.forEach((e) => { saved.push(e.id); change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }); });
+        atodo.forEach((e) => { saved.push(e.id); change({ op: "set", id: e.id, data: Object.assign({}, e, { done: true }) }); });
+        try { localStorage.setItem("sc_lastSaved", JSON.stringify(saved)); } catch (e) {}
+        aLastExport = []; try { localStorage.setItem("sc_alastExport", "[]"); } catch (e) {}
+        lastExport = []; try { localStorage.setItem("sc_lastExport", "[]"); } catch (e) {}
+        tLastExport = []; try { localStorage.setItem("sc_tlastExport", "[]"); } catch (e) {}
+      }
       showPurch(true);
       const m2 = $("pMsg"); m2.hidden = false;
-      m2.textContent = fs.every(Boolean) ? fs.join("・") + " をダウンロードフォルダに保存しました。" : "保存できませんでした。もう一度押してください。";
+      m2.textContent = okAll ? fs.join("・") + " をダウンロードフォルダに保存して、反映済みにしました。セットデータの「まとめて実行」を押すとExcelに入ります。" : "保存できませんでした。もう一度押してください。";
+    });
+    const pu = $("pUndo");
+    if (pu) pu.addEventListener("click", () => {
+      let ids = []; try { ids = JSON.parse(localStorage.getItem("sc_lastSaved") || "[]"); } catch (e) {}
+      allEntries().concat(allT(), allA()).filter((e) => ids.includes(e.id) && e.done).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: false }) }));
+      try { localStorage.setItem("sc_lastSaved", "[]"); } catch (e) {}
+      showPurch(true);
     });
     const pd = $("pDone");
     if (pd) pd.addEventListener("click", () => {
