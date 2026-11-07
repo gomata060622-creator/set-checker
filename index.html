@@ -308,7 +308,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
 
   const $ = (id) => document.getElementById(id);
   const main = $("main"), q = $("q"), info = $("dataInfo");
-  let DATA = null, codeIdx = null, textIdx = null, lastList = null, showFull = false, setIdx = null;
+  let DATA = null, codeIdx = null, textIdx = null, lastList = null, showFull = false, setIdx = null, titleIdx = null;
+  const titleKey = (t) => String(t || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
   let curView = { type: "home" };
   try { showFull = localStorage.getItem("sc_full") === "1"; } catch (e) {}
 
@@ -329,8 +330,11 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     codeIdx = new Map();
     textIdx = [];
     setIdx = new Map();
+    titleIdx = new Map();
     data.sets.forEach((s, si) => {
       setIdx.set(s.s + "|" + s.col, si);
+      const tk = titleKey(s.t);
+      if (tk) { if (!titleIdx.has(tk)) titleIdx.set(tk, []); titleIdx.get(tk).push(si); }
       const add = (k, vi) => {
         if (!k) return;
         if (!codeIdx.has(k)) codeIdx.set(k, []);
@@ -732,7 +736,28 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         '<button class="x" data-id="' + esc(x.id) + '" aria-label="履歴から消す">×</button></div>';
     }).join("");
   }
+  // セットデータで列が動いて「シート｜列」で見つからない履歴は、セット名で探し直して新しい列に付け替える
+  // （同じシートで1つに決まればそれ、だめなら全部のシートで1つに決まればそれ。決まらなければそのまま）
+  function fixHist() {
+    if (!setIdx || !titleIdx || !DATA || DATA.sample) return;
+    [...hist.values()].forEach((x) => {
+      if (setIdx.get(x.s + "|" + x.gc) != null) return;
+      const c = titleIdx.get(titleKey(x.t)) || [];
+      let si = null;
+      const same = c.filter((i) => DATA.sets[i].s === x.s);
+      if (same.length === 1) si = same[0];
+      else if (!same.length && c.length === 1) si = c[0];
+      if (si == null) return;
+      const s = DATA.sets[si], id = histId(s.s, s.col), cur = hist.get(id);
+      const d = { id, s: s.s, gc: s.col, t: s.t || x.t, n: (x.n || 0) + (cur && cur.n ? cur.n : 0), at: cur && cur.at > x.at ? cur.at : x.at };
+      delHist(x.id);
+      hist.set(id, d);
+      histPut(d);
+    });
+    saveHistLocal();
+  }
   function histHtml() {
+    fixHist();
     const all = [...hist.values()];
     if (!all.length) return "";
     const recent = all.slice().sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 50);
