@@ -2177,8 +2177,13 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
   function addArrival(raw) {
     const c = arrCode(raw);
-    if (!c) { tToast(bookoffTag(raw) ? "値札は読まなくて大丈夫です" : "本のバーコードではないようです：" + String(raw).trim()); return; }
-    const data = { kind: "a", id: newId(), at: new Date().toISOString(), d: today(), j: c, t: titleOf(c) || codeTitle(shelfCode(c) || c), done: false, sh: arrShelf || "" };
+    // バーコードがない古い本は、書名（の一部）をそのまま記録する。00仕入れリストの取り込みが、仕入予定の商品名に当てる（出品シートのA列に書名の一部を貼ったのと同じ）
+    const word = !c && !bookoffTag(raw) ? String(raw || "").normalize("NFKC").replace(/\s+/g, " ").trim() : "";
+    if (!c && (!word || word.length < 2 || /^[\d\s-]+$/.test(word))) { tToast(bookoffTag(raw) ? "値札は読まなくて大丈夫です" : "本のバーコードではないようです：" + String(raw).trim()); return; }
+    const data = c
+      ? { kind: "a", id: newId(), at: new Date().toISOString(), d: today(), j: c, t: titleOf(c) || codeTitle(shelfCode(c) || c), done: false, sh: arrShelf || "" }
+      : { kind: "a", id: newId(), at: new Date().toISOString(), d: today(), j: word, t: "（書名で記録）", done: false, sh: arrShelf || "" };
+    if (!c) tToast("書名で記録しました：" + word.slice(0, 20));
     change({ op: "set", id: data.id, data });
     if (arrShelf) locAdd(shelfCode(c) || c, arrShelf, data.t);
     try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
@@ -2204,7 +2209,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   function showArr() {
     curView = { type: "arr" };
     const al = allA().sort((a, b) => (a.at < b.at ? 1 : -1)), todo = al.filter((e) => !e.done);
-    let h = arrShelfHtml() + '<div class="callout"><div><b>到着：届いた本のバーコードを次々に読んでください</b>（読んだだけで記録されます。Keepaは使いません）</div>' +
+    let h = arrShelfHtml() + '<div class="callout"><div><b>到着：届いた本のバーコードを次々に読んでください</b>（読んだだけで記録されます。Keepaは使いません。バーコードがない本は書名の一部を入れて「探す」）</div>' +
       '<div class="note">まだExcelに入っていない到着：' + todo.length + "冊。パソコンの仕入れ一覧で「Excel用に保存」→ 00仕入れリストの仕入予定シートの取り込みボタンで、本年度仕入分に入ります。間違えて読んだものは「消す」で取り消せます。</div></div>";
     if (!al.length) h += '<div class="empty"><b>まだ読んでいません</b><div class="note">カメラ（📷）かバーコードリーダーで読んでください。</div></div>';
     else h += arrDays(al.filter((e) => !e.done)) + (al.some((e) => e.done) ? '<div class="note">反映済みの到着は、仕入れ一覧で消せます。</div>' : "");
@@ -2228,7 +2233,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const d = new Date();
     const fn = "到着_" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "_" + pad(d.getHours()) + pad(d.getMinutes()) + ".csv";
     try {
-      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+      // 00仕入れリストはShift-JISで読むので、書名で記録した分が文字化けしないようShift-JISで書く
+      const url = URL.createObjectURL(new Blob([toSjis(csv)], { type: "text/csv;charset=shift_jis" }));
       const a = document.createElement("a");
       a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
