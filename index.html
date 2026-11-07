@@ -551,6 +551,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const budget = s.avg != null && s.avg > 0 ? s.avg * s.vol.length : null;
       aimOf = (i) => { const v = s.vol[i]; return budget != null && gsum > 0 && v[2] > 0 ? Math.round((budget * v[2]) / gsum / 10) * 10 : null; };
     }
+    // グレーの列（Amazonの送料込みの値段）から送料250円を引く。引いて150円より安くなる巻は150円（もとが150円以下ならそのまま）
+    const greyNet = (p) => (p <= 150 ? p : Math.max(p - 250, 150));
     const fact = (k, v, cls) => '<div class="fact"><span class="k">' + k + '</span><span class="v num ' + (cls || "") + '">' + v + "</span></div>";
 
     // ⑥をそろえたら：残りの巻を、過去に買った値段（売れた列とそろった列の、その巻の値段の平均）で買ったときの利益
@@ -568,7 +570,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       let spend2 = 0, noLatest = 0;
       baseC.miss.forEach((vn) => {
         const lp = s.vol[vn - 1] && s.vol[vn - 1][2];
-        if (typeof lp === "number" && lp > 0) spend2 += lp;
+        if (typeof lp === "number" && lp > 0) spend2 += greyNet(lp);   // 送料250円を引いた値段（最低150円。Excelと同じ）
         else { noLatest++; const a = aimOf(vn - 1); spend2 += a != null ? a : 0; }
       });
       amzProfit = { v: Math.floor(baseC.rem + 1000 - spend2), noLatest };
