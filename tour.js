@@ -397,7 +397,7 @@
     on("trHomeMap", "click", () => { S.pickHome = true; re(); });
     on("trCtrMap", "click", () => { S.pickCenter = true; re(); });
     on("trCtrHome", "click", () => { S.center = null; re(); });
-    const here = (f) => { if (!navigator.geolocation) return toast("このスマホでは現在地が取れません"); navigator.geolocation.getCurrentPosition((p) => { f({ lat: p.coords.latitude, lng: p.coords.longitude }); re(); }, () => toast("現在地を取れませんでした"), { enableHighAccuracy: true, timeout: 15000 }); };
+    const here = (f) => { if (!navigator.geolocation) return toast("このスマホでは現在地が取れません"); toast("現在地を調べています…"); navigator.geolocation.getCurrentPosition((p) => { f({ lat: p.coords.latitude, lng: p.coords.longitude }); re(); toast("現在地にしました"); }, () => toast("現在地を取れませんでした"), { enableHighAccuracy: true, timeout: 15000 }); };
     on("trHomeHere", "click", () => here((p) => { S.home = Object.assign(p, { name: "現在地" }); }));
     on("trCtrHere", "click", () => here((p) => { S.center = Object.assign(p, { name: "現在地" }); }));
     on("trCsv", "click", () => { const d = new Date(); download("店回り_" + (d.getMonth() + 1) + "月" + d.getDate() + "日.csv", csvTS(res.order, res.sim)); });
