@@ -13,8 +13,9 @@
   };
   const WD = ["日", "月", "火", "水", "木", "金", "土"];
   let ST = null, loading = null, map = null, layer = null, mapEl = null;
-  let S = { home: HOME0, mode: "area", pref: "大阪府", cities: [], area: "", center: null, radius: 5, picked: [], off: [], dep: "10:00", stay: 30, speed: 20, back: true, groups: 1, g: 0, my: [], day: null, never: [], date: "", star: [], unstar: [] };
+  let S = { home: HOME0, mode: "area", pref: "大阪府", cities: [], area: "", center: null, radius: 5, picked: [], off: [], dep: "10:00", stay: 60, speed: 20, back: true, groups: 1, g: 0, my: [], day: null, never: [], date: "", star: [], unstar: [] };
   try { Object.assign(S, JSON.parse(localStorage.getItem(LS) || "{}")); } catch (e) {}
+  if (!S.stay60) { S.stay = 60; S.stay60 = true; } // 1店60分を標準にした（2026-11-13）
   ["never", "star", "unstar", "picked", "off", "my", "cities"].forEach((k) => { if (!Array.isArray(S[k])) S[k] = []; });
   // 星：大阪・京都・奈良・兵庫の店は最初から星つき（外したものは unstar に入る）
   const STAR_PREFS = ["大阪府", "京都府", "奈良県", "兵庫県"];
