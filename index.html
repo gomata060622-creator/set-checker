@@ -1429,11 +1429,10 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     (k.hints || []).forEach((n) => { h += '<div class="kn"><span class="d num">置き場所 ' + esc(String(n[0]).slice(2)) + "</span>" + esc(n[1]) + "</div>"; });
     if (k.sold && k.sold.length) h += '<div class="kt"><b>小部屋で売れた</b><span class="num">' + k.sold.map((x) => esc(String(x[0]).slice(5)) + " " + yen(x[1]) + "円").join("・") + "</span></div>";
     if (k.kk && k.kk.length) h += '<div class="kt"><span class="kk">カカリ</span><span>' + k.kk.join("・") + "巻（ソルーさんの投稿から）</span></div>";
-    // ひとことは最新の1件だけ出し、前のものは押すと開く
+    // ひとことは要点だけに短くしたものを全部出す
     const kn = (n) => '<div class="kn"><span class="d num">' + esc(String(n[0]).slice(5)) + " " + esc(n[1]) + "</span>" + esc(n[2]) + "</div>";
     const ns = k.notes || [];
-    if (ns.length) h += kn(ns[0]);
-    if (ns.length > 1) h += '<details class="kmore"><summary>前のひとこと（' + (ns.length - 1) + "件）</summary>" + ns.slice(1).map(kn).join("") + "</details>";
+    h += ns.map(kn).join("");
     return h + "</div>";
   }
 
@@ -1465,8 +1464,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     its.forEach((it) => (it.n || []).forEach((n) => ns.push(n)));
     ns.sort((x, y) => String(y[0]).localeCompare(String(x[0])));
     const kn = (n) => '<div class="kn"><span class="d num">' + esc(String(n[0]).slice(5)) + "</span>" + esc(n[1]) + "</div>";
-    let h = '<div class="kh kr"><div class="kt"><span class="kname">Kronos</span></div>' + kn(ns[0]);
-    if (ns.length > 1) h += '<details class="kmore"><summary>前の情報（' + (ns.length - 1) + "件）</summary>" + ns.slice(1).map(kn).join("") + "</details>";
+    let h = '<div class="kh kr"><div class="kt"><span class="kname">Kronos</span></div>' + ns.map(kn).join("");
     return h + "</div>";
   }
 
