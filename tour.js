@@ -13,9 +13,56 @@
   };
   const WD = ["日", "月", "火", "水", "木", "金", "土"];
   let ST = null, loading = null, map = null, layer = null, mapEl = null;
-  let S = { home: HOME0, mode: "area", pref: "大阪府", cities: [], area: "", center: null, radius: 5, picked: [], off: [], dep: "10:00", stay: 30, speed: 20, back: true, groups: 1, g: 0, my: [], day: null, never: [] };
+  let S = { home: HOME0, mode: "area", pref: "大阪府", cities: [], area: "", center: null, radius: 5, picked: [], off: [], dep: "10:00", stay: 30, speed: 20, back: true, groups: 1, g: 0, my: [], day: null, never: [], date: "", star: [], unstar: [] };
   try { Object.assign(S, JSON.parse(localStorage.getItem(LS) || "{}")); } catch (e) {}
-  if (!Array.isArray(S.never)) S.never = [];
+  ["never", "star", "unstar", "picked", "off", "my", "cities"].forEach((k) => { if (!Array.isArray(S[k])) S[k] = []; });
+  // 星：大阪・京都・奈良・兵庫の店は最初から星つき（外したものは unstar に入る）
+  const STAR_PREFS = ["大阪府", "京都府", "奈良県", "兵庫県"];
+  // 兵庫は姫路の手前（高砂・加古川）まで。姫路市とそれより西は最初は星なし
+  const starDefault = (s) => STAR_PREFS.includes(s.pref) && !(s.pref === "兵庫県" && s.lng < 134.76);
+  const starred = (s) => S.unstar.includes(s.id) ? false : starDefault(s) || S.star.includes(s.id);
+  const toggleStar = (s) => {
+    if (starred(s)) { S.star = S.star.filter((x) => x !== s.id); if (starDefault(s)) S.unstar.push(s.id); }
+    else { S.unstar = S.unstar.filter((x) => x !== s.id); if (!starDefault(s)) S.star.push(s.id); }
+  };
+  // ---------- セール・お知らせ（data/news.json。毎週の更新で新しくする） ----------
+  let NEWS = null;
+  const ymd = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const today = () => ymd(new Date());
+  const saleOn = (sale, dstr) => { const d = new Date(dstr + "T00:00:00"); return sale.monthly ? sale.monthly.includes(d.getDate()) : (sale.dates || []).includes(dstr); };
+  const salesOf = (s) => NEWS && NEWS.stores && NEWS.stores[s.id] ? NEWS.stores[s.id].map((k) => NEWS.sales.find((x) => x.k === k)).filter(Boolean) : [];
+  // これから2週間のセールの日（店ごと）
+  function upcoming(days) {
+    const out = [];
+    if (!NEWS) return out;
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+    for (let i = 0; i < days; i++) {
+      const d = new Date(d0.getTime() + i * 86400000), ds = ymd(d);
+      NEWS.sales.forEach((sale) => {
+        if (!saleOn(sale, ds)) return;
+        const st = all().filter((x) => (NEWS.stores[x.id] || []).includes(sale.k) && starred(x));
+        if (st.length) out.push({ ds, d, sale, st });
+      });
+    }
+    return out;
+  }
+  // ---------- 道路での移動時間（OSRM・無料。電波がないときや使えないときは目安） ----------
+  const DUR = new Map(); let durKey = "", durState = "";
+  const pid = (p) => p.id || "home";
+  async function fetchDur(pts) {
+    const key = pts.map(pid).join(",") + "|" + S.home.lat + "," + S.home.lng;
+    if (key === durKey) return;
+    durKey = key; durState = "取得中";
+    try {
+      const url = "https://router.project-osrm.org/table/v1/driving/" + pts.map((p) => p.lng.toFixed(5) + "," + p.lat.toFixed(5)).join(";") + "?annotations=duration,distance";
+      const r = await fetch(url);
+      const j = await r.json();
+      if (j.code !== "Ok") throw new Error(j.code);
+      pts.forEach((a, i) => pts.forEach((b, k) => { if (i !== k) DUR.set(pid(a) + ">" + pid(b), { m: j.durations[i][k] / 60, km: j.distances[i][k] / 1000 }); }));
+      durState = "道路";
+    } catch (e) { durState = "目安"; }
+    if (key === durKey) render();
+  }
   const save = () => { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const toast = (t) => {
@@ -26,7 +73,10 @@
 
   async function load() {
     if (ST) return ST;
-    if (!loading) loading = fetch("data/stores.json").then((r) => r.json()).then((d) => { ST = d.stores; return ST; });
+    if (!loading) loading = Promise.all([
+      fetch("data/stores.json").then((r) => r.json()),
+      fetch("data/news.json").then((r) => r.json()).catch(() => null),
+    ]).then(([d, n]) => { ST = d.stores; NEWS = n; return ST; });
     return loading;
   }
   const every = () => (ST || []).concat((S.my || []).map((m) => Object.assign({ brand: "自分で足した店", chain: "my" }, m)));
@@ -40,7 +90,9 @@
     return 2 * R * Math.asin(Math.sqrt(x));
   };
   const ROAD = 1.3;   // まっすぐの距離 → 道のりの目安
-  const mins = (a, b) => (km(a, b) * ROAD / Math.max(5, S.speed)) * 60;
+  const road = (a, b) => DUR.get(pid(a) + ">" + pid(b));
+  const mins = (a, b) => { const r = road(a, b); return r ? r.m : (km(a, b) * ROAD / Math.max(5, S.speed)) * 60; };
+  const dkm = (a, b) => { const r = road(a, b); return r ? r.km : km(a, b) * ROAD; };
   const toMin = (t) => { const m = String(t || "").match(/(\d{1,2}):(\d{2})/); return m ? +m[1] * 60 + +m[2] : null; };
   const hhmm = (m) => { m = Math.round(m); return Math.floor(m / 60) + ":" + String(m % 60).padStart(2, "0"); };
   function hoursOf(s, day) {
@@ -110,11 +162,11 @@
       if (h && t < h.o) { wait = h.o - t; t = h.o; }
       const arr = t;
       if (h && arr + S.stay > h.c) ok = false;
-      rows.push({ s, arr, wait, h, km: km(pos, s) * ROAD });
+      rows.push({ s, arr, wait, h, km: dkm(pos, s) });
       t += S.stay; pos = s;
     }
     const backMin = S.back ? mins(pos, S.home) : 0;
-    return { ok, rows, end: t + backMin, back: S.back ? km(pos, S.home) * ROAD : 0 };
+    return { ok, rows, end: t + backMin, back: S.back ? dkm(pos, S.home) : 0 };
   }
   const cost = (order, day) => { const r = simulate(order, day); return r.ok ? r.end : Infinity; };
   function plan(list, day, limitEnd) {
@@ -203,7 +255,7 @@
       const n = idx.get(s.id), inC = cset.has(s.id), off = S.off.includes(s.id);
       const cls = "tr-pin " + (n ? "tr-on" : inC ? "tr-cand" : off ? "tr-off" : "tr-other") + (s.chain === "furuichi" ? " tr-fr" : s.chain === "my" ? " tr-my" : "");
       const m = L.marker([s.lat, s.lng], { icon: L.divIcon({ className: cls, html: n ? String(n) : "", iconSize: n ? [24, 24] : [14, 14] }) }).addTo(layer);
-      m.bindTooltip(esc(s.name) + (s.note ? "<br>" + esc(s.note) : ""));
+      m.bindTooltip((starred(s) ? "★" : "") + esc(s.name) + (s.note ? "<br>" + esc(s.note) : "") + (salesOf(s).some((x) => saleOn(x, S.date)) ? "<br>この日セール" : ""));
       m.on("click", () => onTap(s));
       if (n || inC) pts.push([s.lat, s.lng]);
     });
@@ -220,7 +272,8 @@
     const main = host;
     if (!main) return;
     if (!ST) { main.innerHTML = '<div class="empty"><b>店のデータを読み込んでいます…</b></div>'; try { await load(); } catch (e) { main.innerHTML = '<div class="empty"><b>店のデータを読み込めませんでした</b><div class="note">一度電波のある所で開いてください。</div></div>'; return; } }
-    const day = S.day != null ? S.day : new Date().getDay();
+    if (!S.date || S.date < today()) S.date = today();
+    const day = new Date(S.date + "T00:00:00").getDay();
     const cands = candidates();
     const groups = split(cands, S.groups);
     const gi = Math.min(S.g, groups.length - 1);
@@ -228,12 +281,25 @@
     const MAX = 40;
     let capped = 0;
     if (grp.length > MAX) { capped = grp.length; grp = grp.slice().sort((a, b) => km(S.home, a) - km(S.home, b)).slice(0, MAX); }
+    if (grp.length && navigator.onLine !== false) fetchDur([S.home].concat(grp));
     const res = plan(grp, day);
     const prefs = [...new Set(all().map((s) => s.pref))].filter(Boolean);
     const cities = [...new Set(all().filter((s) => s.pref === S.pref).map((s) => cityKey(s)))].sort((a, b) => a.localeCompare(b, "ja"));
     let h = '<section class="tr">';
     h += '<div class="callout"><div><b>店回り</b>（回る店を選ぶと、閉店に間に合う効率のいい順を出します）</div>' +
       '<div class="note">出発：' + esc(S.home.name) + '　<button type="button" class="purchbtn" id="trHomeHere">現在地にする</button> <button type="button" class="purchbtn" id="trHomeMap">地図で選ぶ</button> <button type="button" class="purchbtn" id="trHomeReset">家に戻す</button></div></div>';
+    // セール・イベントの一覧（星の店だけ）
+    const up = upcoming(14);
+    if (up.length || (NEWS && NEWS.news && NEWS.news.length)) {
+      h += '<details class="tr-box" open><summary><b>セール・イベント（星の店・2週間）</b></summary>';
+      up.forEach((u, i) => {
+        const prefs = {}; u.st.forEach((x) => { const k = x.pref.replace(/[府県]$/, "") + " " + cityKey(x).replace(/^大阪市/, ""); prefs[k] = (prefs[k] || 0) + 1; });
+        h += '<div class="tr-ev"><b>' + (u.d.getMonth() + 1) + "/" + u.d.getDate() + "(" + WD[u.d.getDay()] + ")</b> " + esc(u.sale.t) + "　" + u.st.length + "店" +
+          '<div class="note">' + Object.entries(prefs).map(([k, n]) => esc(k) + (n > 1 ? "×" + n : "")).join("・") + '</div><button type="button" class="purchbtn" data-ev="' + i + '">この日にこの店を回る</button></div>';
+      });
+      if (NEWS && NEWS.news) NEWS.news.forEach((n) => { h += '<div class="note">' + esc(n.d.slice(5).replace("-", "/")) + " " + esc(n.t) + "</div>"; });
+      h += '<div class="note">' + esc((NEWS && NEWS.made) || "") + "時点のブックオフの各店ページから（毎週更新）</div></details>";
+    }
     // 範囲
     h += '<div class="tr-box"><div class="tr-tabs">' + [["area", "地域"], ["radius", "中心と半径"], ["pick", "地図で選ぶ"]].map(([k, t]) => '<button type="button" class="purchbtn' + (S.mode === k ? " dcon" : "") + '" data-mode="' + k + '">' + t + "</button>").join("") + "</div>";
     if (S.mode === "area") {
@@ -252,7 +318,7 @@
     h += "</div>";
     // 条件
     h += '<div class="tr-box tr-row">' +
-      '曜日 <select id="trDay">' + WD.map((w, i) => '<option value="' + i + '"' + (i === day ? " selected" : "") + ">" + w + "</option>").join("") + "</select>" +
+      '日 <input type="date" id="trDate" value="' + esc(S.date) + '"> (' + WD[day] + ")" +
       ' 出発 <input type="time" id="trDep" value="' + esc(S.dep) + '">' +
       ' 1店 <select id="trStay">' + [15, 20, 30, 40, 45, 60, 90].map((m) => '<option' + (m === S.stay ? " selected" : "") + ">" + m + "</option>").join("") + "</select>分" +
       ' 速さ <select id="trSpd">' + [15, 20, 25, 30, 40].map((m) => '<option' + (m === S.speed ? " selected" : "") + ">" + m + "</option>").join("") + "</select>km/h" +
@@ -264,15 +330,17 @@
     // 結果
     const sim = res.sim;
     if (capped) h += '<div class="note"><b>候補が' + capped + '店あるので、出発地に近い' + MAX + '店で計算しています。</b>範囲をしぼるか「分ける」を増やしてください。</div>';
+    const dnote = durState === "道路" && grp.every((x) => road(S.home, x)) ? "移動時間は道路で計算" : durState === "取得中" ? "道路の時間を調べています…" : "移動時間は目安（まっすぐの距離×1.3）";
+    h += '<div class="note">' + dnote + "</div>";
     h += '<div class="tr-sum">候補 ' + grp.length + "店のうち <b>" + res.order.length + "店</b> 回れます" + (res.order.length ? "（" + hhmm(toMin(S.dep)) + "出発 → " + hhmm(sim.end) + (S.back ? "帰着" : "最後の店を出る") + "）" : "") + "</div>";
     if (res.order.length) {
-      h += '<ol class="tr-list">' + sim.rows.map((r, i) => '<li><b>' + hhmm(r.arr) + "</b>着 " + esc(r.s.name) + '<div class="note">' + (r.h ? "営業 " + esc(r.h.t) : "営業時間不明") + (r.s.note ? "　<b>" + esc(r.s.note) + "</b>" : "") + (r.wait > 0 ? "（開店まで" + Math.round(r.wait) + "分待ち）" : "") + "　前から約" + r.km.toFixed(1) + "km・" + esc(r.s.address || "") + ' <button type="button" class="purchbtn" data-off="' + esc(r.s.id) + '">今日は外す</button> <button type="button" class="purchbtn" data-never="' + esc(r.s.id) + '">もう行かない</button></div></li>').join("") + "</ol>";
+      h += '<ol class="tr-list">' + sim.rows.map((r, i) => '<li><b>' + hhmm(r.arr) + "</b>着 " + esc(r.s.name) + '<div class="note">' + (r.h ? "営業 " + esc(r.h.t) : "営業時間不明") + (r.s.note ? "　<b>" + esc(r.s.note) + "</b>" : "") + saleBadge(r.s) + (r.wait > 0 ? "（開店まで" + Math.round(r.wait) + "分待ち）" : "") + "　前から約" + r.km.toFixed(1) + "km・" + esc(r.s.address || "") + ' <button type="button" class="purchbtn" data-off="' + esc(r.s.id) + '">今日は外す</button> <button type="button" class="purchbtn" data-never="' + esc(r.s.id) + '">もう行かない</button> ' + starBtn(r.s) + "</div></li>").join("") + "</ol>";
       if (S.back) h += '<div class="note">最後の店から出発地まで約' + sim.back.toFixed(1) + "km</div>";
       h += '<div class="actions"><button type="button" class="btn btn-primary" id="trCsv">ツーリングサポーター用に書き出す</button></div>';
       h += '<div class="actions">' + gmapLinks(res.order).map((u, i, a) => '<a class="btn" target="_blank" rel="noopener" href="' + esc(u) + '">Googleマップで開く' + (a.length > 1 ? "（" + (i + 1) + "/" + a.length + "）" : "") + "</a>").join("") + "</div>";
       h += '<div class="note">書き出したCSVは、ツーリングサポーターのWeb版マイページの「My地点」→「地点をインポート」で取り込めます（1回100件まで）。経由地は8か所までなので、9店以上の日はルートを分けてください。移動時間は、まっすぐの距離×1.3を速さで割った目安です。</div>';
     }
-    if (res.left.length) h += '<div class="tr-box"><b>時間内に回れない店（' + res.left.length + "店）</b>" + res.left.map((s) => '<div class="note">' + esc(s.name) + "（" + ((hoursOf(s, day) || {}).t || "営業時間不明") + "）" + (s.note ? " " + esc(s.note) : "") + ' <button type="button" class="purchbtn" data-never="' + esc(s.id) + '">もう行かない</button></div>').join("") + "</div>";
+    if (res.left.length) h += '<div class="tr-box"><b>時間内に回れない店（' + res.left.length + "店）</b>" + res.left.map((s) => '<div class="note">' + esc(s.name) + "（" + ((hoursOf(s, day) || {}).t || "営業時間不明") + "）" + (s.note ? " " + esc(s.note) : "") + saleBadge(s) + ' <button type="button" class="purchbtn" data-never="' + esc(s.id) + '">もう行かない</button> ' + starBtn(s) + "</div>").join("") + "</div>";
     if (S.off.length) h += '<div class="note">今日は外した店 ' + S.off.length + '店 <button type="button" class="purchbtn" id="trOffClear">外した店を戻す</button></div>';
     if (S.never.length) { const byId = new Map(every().map((x) => [x.id, x])); h += '<details class="tr-box"><summary>もう行かない店（' + S.never.length + '店）</summary>' + S.never.map((id) => '<div class="note">' + esc((byId.get(id) || {}).name || id) + ' <button type="button" class="purchbtn" data-unnever="' + esc(id) + '">戻す</button></div>').join("") + "</details>"; }
     // 自分で足す店
@@ -282,7 +350,7 @@
       (S.my || []).map((m) => '<div class="note">' + esc(m.name) + "　" + esc(m.address) + ' <button type="button" class="purchbtn" data-mydel="' + esc(m.id) + '">消す</button></div>').join("") + "</details>";
     h += '<div class="note">ブックオフの店のデータは「仕入れマップ」（合同会社にしき・MITライセンス）から、古本市場・ふるいちは公式の店舗一覧から作っています。</div></section>';
     main.innerHTML = h;
-    bind(main, res);
+    bind(main, res, up);
     mapEl = main.querySelector("#trMap");
     drawMap(mapEl, cands, res.order, (s) => {
       if (S.mode === "pick") { const i = S.picked.indexOf(s.id); if (i >= 0) S.picked.splice(i, 1); else S.picked.push(s.id); }
@@ -290,10 +358,17 @@
       save(); render();
     });
   }
+  function saleBadge(s) {
+    const L = salesOf(s);
+    if (!L.length) return "";
+    const on = L.filter((x) => saleOn(x, S.date));
+    return (on.length ? '　<span class="tr-sale">この日：' + on.map((x) => esc(x.t)).join("／") + "</span>" : "") + (L.length > on.length ? '　<span class="tr-sale2">' + L.filter((x) => !on.includes(x)).map((x) => esc(x.t.replace(/（.*/, "")) + (x.monthly ? "（毎月" + x.monthly.join("・") + "日）" : x.dates ? "（" + x.dates.map((d) => d.slice(5).replace("-", "/")).join("・") + "）" : "")).join("／") + "</span>" : "");
+  }
+  const starBtn = (s) => '<button type="button" class="purchbtn tr-star" data-star="' + esc(s.id) + '">' + (starred(s) ? "★" : "☆") + "</button>";
   const cityKey = (s) => { const c = s.city || ""; const m = c.match(/^(.+?市)(.+区)$/); return m && m[1] !== "大阪市" ? m[1] : c; };
   AREAS["大阪市内"] = ["大阪市"];
 
-  function bind(main, res) {
+  function bind(main, res, up) {
     const $ = (id) => main.querySelector("#" + id);
     const on = (id, ev, f) => { const e = $(id); if (e) e.addEventListener(ev, f); };
     const re = () => { save(); render(); };
@@ -302,12 +377,14 @@
     main.querySelectorAll("[data-city]").forEach((b) => b.addEventListener("change", () => { const c = b.dataset.city; S.cities = b.checked ? S.cities.concat([c]) : S.cities.filter((x) => x !== c); S.area = ""; S.g = 0; re(); }));
     main.querySelectorAll("[data-g]").forEach((b) => b.addEventListener("click", () => { S.g = +b.dataset.g; re(); }));
     main.querySelectorAll("[data-off]").forEach((b) => b.addEventListener("click", () => { S.off.push(b.dataset.off); re(); }));
+    main.querySelectorAll("[data-ev]").forEach((b) => b.addEventListener("click", () => { const u = up[+b.dataset.ev]; S.mode = "pick"; S.picked = u.st.map((x) => x.id); S.date = u.ds; S.groups = 1; S.g = 0; re(); window.scrollTo(0, 0); }));
+    main.querySelectorAll("[data-star]").forEach((b) => b.addEventListener("click", () => { const st = all().find((x) => x.id === b.dataset.star); if (st) toggleStar(st); re(); }));
     main.querySelectorAll("[data-never]").forEach((b) => b.addEventListener("click", () => { if (!S.never.includes(b.dataset.never)) S.never.push(b.dataset.never); S.picked = S.picked.filter((x) => x !== b.dataset.never); re(); }));
     main.querySelectorAll("[data-unnever]").forEach((b) => b.addEventListener("click", () => { S.never = S.never.filter((x) => x !== b.dataset.unnever); re(); }));
     main.querySelectorAll("[data-mydel]").forEach((b) => b.addEventListener("click", () => { S.my = S.my.filter((m) => m.id !== b.dataset.mydel); re(); }));
     on("trPref", "change", (e) => { S.pref = e.target.value; S.cities = []; S.area = ""; S.g = 0; re(); });
     on("trRad", "change", (e) => { S.radius = +e.target.value; S.g = 0; re(); });
-    on("trDay", "change", (e) => { S.day = +e.target.value; re(); });
+    on("trDate", "change", (e) => { S.date = e.target.value || today(); re(); });
     on("trDep", "change", (e) => { S.dep = e.target.value || "10:00"; re(); });
     on("trStay", "change", (e) => { S.stay = +e.target.value; re(); });
     on("trSpd", "change", (e) => { S.speed = +e.target.value; re(); });
