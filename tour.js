@@ -288,7 +288,8 @@
     const cities = [...new Set(all().filter((s) => s.pref === S.pref).map((s) => cityKey(s)))].sort((a, b) => a.localeCompare(b, "ja"));
     let h = '<section class="tr">';
     h += '<div class="callout"><div><b>店回り</b>（回る店を選ぶと、閉店に間に合う効率のいい順を出します）</div>' +
-      '<div class="note">出発：' + esc(S.home.name) + '　<button type="button" class="purchbtn" id="trHomeHere">現在地にする</button> <button type="button" class="purchbtn" id="trHomeMap">地図で選ぶ</button> <button type="button" class="purchbtn" id="trHomeReset">家に戻す</button></div></div>';
+      '<div class="note">出発：' + esc(S.home.name) + '　<button type="button" class="purchbtn" id="trHomeHere">現在地にする</button> <button type="button" class="purchbtn" id="trHomeMap">地図で選ぶ</button> <button type="button" class="purchbtn" id="trHomeReset">家に戻す</button>' +
+      '<div class="tr-row"><input type="text" id="trHomeAddr" placeholder="出発地の住所（例：大阪市都島区東野田町3丁目）" style="flex:1;min-width:12em"> <button type="button" class="purchbtn" id="trHomeSet">ここから出発</button></div></div></div>';
     // セール・イベントの一覧（星の店だけ）
     const up = upcoming(14);
     if (up.length || (NEWS && NEWS.news && NEWS.news.length)) {
@@ -401,6 +402,17 @@
     on("trHomeHere", "click", () => here((p) => { S.home = Object.assign(p, { name: "現在地" }); }));
     on("trCtrHere", "click", () => here((p) => { S.center = Object.assign(p, { name: "現在地" }); }));
     on("trCsv", "click", () => { const d = new Date(); download("店回り_" + (d.getMonth() + 1) + "月" + d.getDate() + "日.csv", csvTS(res.order, res.sim)); });
+    on("trHomeSet", "click", async () => {
+      const addr = $("trHomeAddr").value.trim();
+      if (!addr) return toast("出発地の住所を入れてください");
+      try {
+        const r = await (await fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(addr))).json();
+        if (!r || !r.length) return toast("住所から位置が見つかりませんでした");
+        const [lng, lat] = r[0].geometry.coordinates;
+        S.home = { lat, lng, name: addr };
+        re(); toast("出発地を「" + addr + "」にしました");
+      } catch (e) { toast("住所を調べられませんでした（電波を確かめてください）"); }
+    });
     on("trMyAdd", "click", async () => {
       const name = $("trMyName").value.trim(), addr = $("trMyAddr").value.trim(), hrs = $("trMyHrs").value.trim();
       if (!name || !addr) return toast("店の名前と住所を入れてください");
