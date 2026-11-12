@@ -172,7 +172,7 @@ td.own .mark { font-size: 9px; font-weight: 400; color: var(--miss-fg); margin-l
 .kk { display: inline-block; font-size: 10px; color: #fff; background: var(--miss-fg); border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; }
 .chip.kchip { color: var(--fg); }
 .chip.krchip { color: #8a3ab9; border-color: #8a3ab9; }
-.kr .kname { color: #8a3ab9; font-weight: 700; font-size: 11px; }
+.kname { color: #8a3ab9; font-weight: 700; font-size: 11px; }
 .hist { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .hist h2 { margin: 0; font-size: 14px; padding: 8px 12px; background: var(--accent-soft); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .hrow { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; border-top: 1px solid var(--line); padding: 4px 6px 4px 12px; }
@@ -297,7 +297,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
-    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button></span>
+    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button></span>
   </div>
 </div>
 
@@ -931,6 +931,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     else if (curView.type === "arr") showArr();
     else if (curView.type === "shelf") showShelf();
     else if (curView.type === "pick") showPick();
+    else if (curView.type === "news") showNews();
   }
   function updatePurchBtn() {
     const all = allEntries().filter((e) => !e.done);
@@ -1468,6 +1469,39 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (ns.length > 1) h += '<details class="kmore"><summary>前の情報（' + (ns.length - 1) + "件）</summary>" + ns.slice(1).map(kn).join("") + "</details>";
     return h + "</div>";
   }
+
+  // ---------- ニュース：Kronosの最近の情報を新しい順に（押すとそのセットを探す） ----------
+  let showNews = function () {
+    curView = { type: "news" };
+    const rows = [];
+    ((KR && KR.items) || []).forEach((it) => (it.n || []).forEach((n) => rows.push({ src: "Kronos", d: String(n[0]), t: n[1], w: (it.w || [""])[0], it })));
+    // セットの小部屋（ソルーさんのひとこと）：セットデータにあるセットの、最近のもの
+    if (KH && DATA && !DATA.sample) {
+      const seen = new Set();
+      DATA.sets.forEach((st, si) => {
+        const k = khOf(st);
+        if (!k || seen.has(k)) return;
+        seen.add(k);
+        (k.notes || []).slice(0, 1).forEach((n) => rows.push({ src: "小部屋", d: String(n[0]), t: (n[1] ? n[1] + " " : "") + n[2], w: st.t, si }));
+      });
+    }
+    rows.sort((x, y) => y.d.localeCompare(x.d));
+    const shown = rows.filter((r) => r.src === "Kronos").concat(rows.filter((r) => r.src === "小部屋").slice(0, 40)).sort((x, y) => y.d.localeCompare(x.d));
+    rows.length = 0; shown.forEach((r) => rows.push(r));
+    const has = (r) => r.si != null || (DATA && !DATA.sample && DATA.sets.some((st) => krOf(st).includes(r.it)));
+    let h = '<div class="callout"><div><b>ニュース</b>（Kronosとセットの小部屋の最近の情報）</div><div class="note">押すと、そのセットを開きます。「登録済み」はセットデータにあるもの。</div></div>';
+    if (!rows.length) h += '<div class="empty"><b>まだ情報がありません</b></div>';
+    else {
+      h += '<section class="day">';
+      rows.forEach((r) => {
+        h += '<button type="button" class="item newsrow" data-w="' + esc(r.w) + '"' + (r.si != null ? ' data-si="' + r.si + '"' : "") + '><div class="sub num"><span>' + esc(r.d.slice(5)) + '</span><span class="' + (r.src === "Kronos" ? "kname" : "") + '">' + r.src + "</span>" + (has(r) ? '<span class="chip">登録済み</span>' : "") + '</div><div class="t">' + esc(r.w) + '</div><div class="au">' + esc(r.t) + "</div></button>";
+      });
+      h += "</section>";
+    }
+    main.innerHTML = h;
+    main.querySelectorAll(".newsrow").forEach((b) => b.addEventListener("click", () => { if (b.dataset.si) { showSet(+b.dataset.si, -1, false); } else { q.value = b.dataset.w; search(b.dataset.w); } window.scrollTo(0, 0); }));
+  };
+  $("newsBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; showNews(); window.scrollTo(0, 0); });
 
   // ================= 単品（アマサーチと同じ使い方：バーコードを読む → Keepaで値段・ランキングを見る → 仕入れ） =================
   // Keepaのキーはこのスマホの中だけに置く（公開の置き場所には置かない）
@@ -2709,6 +2743,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   const _shelf = showShelf, _pick = showPick;
   showShelf = function () { const r = _shelf.apply(this, arguments); navRecord(); return r; };
   showPick = function () { const r = _pick.apply(this, arguments); navRecord(); return r; };
+  { const _news = showNews; showNews = function () { const r = _news.apply(this, arguments); navRecord(); return r; }; }
   showTSrch = function () { const r = _tsrch.apply(this, arguments); navRecord(); return r; };
   showTan = function () { const r = _tan.apply(this, arguments); navRecord(); return r; };
   showTDet = function () { const r = _tdet.apply(this, arguments); navRecord(); return r; };
@@ -2736,6 +2771,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       else if (v.type === "arr") showArr();
       else if (v.type === "shelf") showShelf();
       else if (v.type === "pick") showPick();
+      else if (v.type === "news") showNews();
       else showHome();
       const y = st.y || 0;
       setTimeout(() => window.scrollTo(0, y), 0);
