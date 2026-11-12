@@ -172,6 +172,23 @@ td.own .mark { font-size: 9px; font-weight: 400; color: var(--miss-fg); margin-l
 .kk { display: inline-block; font-size: 10px; color: #fff; background: var(--miss-fg); border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; }
 .chip.kchip { color: var(--fg); }
 .chip.krchip { color: #8a3ab9; border-color: #8a3ab9; }
+.tr .tr-box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; margin: 8px 0; font-size: 13px; }
+.tr .tr-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+.tr .tr-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.tr .tr-cities { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; margin: 6px 0; }
+.tr .tr-map { height: 360px; border-radius: 10px; border: 1px solid var(--line); margin: 8px 0; }
+.tr .tr-sum { font-size: 15px; margin: 8px 0; }
+.tr .tr-list { padding-left: 22px; margin: 4px 0; }
+.tr .tr-list li { margin: 6px 0; font-size: 14px; }
+.tr input, .tr select { font-size: 14px; }
+.tr-pin { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 2px rgba(0,0,0,.5); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.tr-on { background: #c0392b; }
+.tr-cand { background: #1a5fb4; }
+.tr-cand.tr-fr { background: #e67e22; }
+.tr-cand.tr-my { background: #2e8b57; }
+.tr-other { background: #9aa0a6; }
+.tr-off { background: #555; opacity: .5; }
+.tr-home { background: #2e8b57; width: 26px; height: 26px; }
 .kname { color: #8a3ab9; font-weight: 700; font-size: 11px; }
 .hist { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .hist h2 { margin: 0; font-size: 14px; padding: 8px 12px; background: var(--accent-soft); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -297,7 +314,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
-    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button></span>
+    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button><button id="tourBtn" class="purchbtn" type="button">店回り</button></span>
   </div>
 </div>
 
@@ -932,6 +949,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     else if (curView.type === "shelf") showShelf();
     else if (curView.type === "pick") showPick();
     else if (curView.type === "news") showNews();
+    else if (curView.type === "tour") showTour();
   }
   function updatePurchBtn() {
     const all = allEntries().filter((e) => !e.done);
@@ -1499,6 +1517,19 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     main.innerHTML = h;
     main.querySelectorAll(".newsrow").forEach((b) => b.addEventListener("click", () => { if (b.dataset.si) { showSet(+b.dataset.si, -1, false); } else { q.value = b.dataset.w; search(b.dataset.w); } window.scrollTo(0, 0); }));
   };
+  // ---------- 店回り（tour.js に中身。回る店を選んで、効率のいい回り方を出す） ----------
+  let showTour = function () {
+    curView = { type: "tour" };
+    const go = () => window.Tour.render(main);
+    if (window.Tour) go();
+    else {
+      main.innerHTML = '<div class="empty"><b>店回りを読み込んでいます…</b></div>';
+      const sc = document.createElement("script"); sc.src = "tour.js"; sc.onload = go;
+      sc.onerror = () => { main.innerHTML = '<div class="empty"><b>店回りを読み込めませんでした</b><div class="note">一度電波のある所で開いてください。</div></div>'; };
+      document.head.appendChild(sc);
+    }
+  };
+  $("tourBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; showTour(); window.scrollTo(0, 0); });
   $("newsBtn").addEventListener("click", () => { closeEditor(); edPos = null; q.value = ""; showNews(); window.scrollTo(0, 0); });
 
   // ================= 単品（アマサーチと同じ使い方：バーコードを読む → Keepaで値段・ランキングを見る → 仕入れ） =================
@@ -2742,6 +2773,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   showShelf = function () { const r = _shelf.apply(this, arguments); navRecord(); return r; };
   showPick = function () { const r = _pick.apply(this, arguments); navRecord(); return r; };
   { const _news = showNews; showNews = function () { const r = _news.apply(this, arguments); navRecord(); return r; }; }
+  { const _tour = showTour; showTour = function () { const r = _tour.apply(this, arguments); navRecord(); return r; }; }
   showTSrch = function () { const r = _tsrch.apply(this, arguments); navRecord(); return r; };
   showTan = function () { const r = _tan.apply(this, arguments); navRecord(); return r; };
   showTDet = function () { const r = _tdet.apply(this, arguments); navRecord(); return r; };
@@ -2770,6 +2802,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       else if (v.type === "shelf") showShelf();
       else if (v.type === "pick") showPick();
       else if (v.type === "news") showNews();
+      else if (v.type === "tour") showTour();
       else showHome();
       const y = st.y || 0;
       setTimeout(() => window.scrollTo(0, y), 0);
