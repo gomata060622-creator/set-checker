@@ -13,8 +13,9 @@
   };
   const WD = ["日", "月", "火", "水", "木", "金", "土"];
   let ST = null, loading = null, map = null, layer = null, mapEl = null;
-  let S = { home: HOME0, mode: "area", pref: "大阪府", cities: [], area: "", center: null, radius: 5, picked: [], off: [], dep: "10:00", stay: 30, speed: 20, back: true, groups: 1, g: 0, my: [], day: null };
+  let S = { home: HOME0, mode: "area", pref: "大阪府", cities: [], area: "", center: null, radius: 5, picked: [], off: [], dep: "10:00", stay: 30, speed: 20, back: true, groups: 1, g: 0, my: [], day: null, never: [] };
   try { Object.assign(S, JSON.parse(localStorage.getItem(LS) || "{}")); } catch (e) {}
+  if (!Array.isArray(S.never)) S.never = [];
   const save = () => { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const toast = (t) => {
@@ -28,7 +29,9 @@
     if (!loading) loading = fetch("data/stores.json").then((r) => r.json()).then((d) => { ST = d.stores; return ST; });
     return loading;
   }
-  const all = () => (ST || []).concat((S.my || []).map((m) => Object.assign({ brand: "自分で足した店", chain: "my" }, m)));
+  const every = () => (ST || []).concat((S.my || []).map((m) => Object.assign({ brand: "自分で足した店", chain: "my" }, m)));
+  // 「もう行かない」にした店は、一覧にも地図にも出さない
+  const all = () => { const nv = new Set(S.never); return every().filter((s) => !nv.has(s.id)); };
 
   // ---------- 距離と時間 ----------
   const km = (a, b) => {
@@ -263,14 +266,15 @@
     if (capped) h += '<div class="note"><b>候補が' + capped + '店あるので、出発地に近い' + MAX + '店で計算しています。</b>範囲をしぼるか「分ける」を増やしてください。</div>';
     h += '<div class="tr-sum">候補 ' + grp.length + "店のうち <b>" + res.order.length + "店</b> 回れます" + (res.order.length ? "（" + hhmm(toMin(S.dep)) + "出発 → " + hhmm(sim.end) + (S.back ? "帰着" : "最後の店を出る") + "）" : "") + "</div>";
     if (res.order.length) {
-      h += '<ol class="tr-list">' + sim.rows.map((r, i) => '<li><b>' + hhmm(r.arr) + "</b>着 " + esc(r.s.name) + '<div class="note">' + (r.h ? "営業 " + esc(r.h.t) : "営業時間不明") + (r.s.note ? "　<b>" + esc(r.s.note) + "</b>" : "") + (r.wait > 0 ? "（開店まで" + Math.round(r.wait) + "分待ち）" : "") + "　前から約" + r.km.toFixed(1) + "km・" + esc(r.s.address || "") + ' <button type="button" class="purchbtn" data-off="' + esc(r.s.id) + '">外す</button></div></li>').join("") + "</ol>";
+      h += '<ol class="tr-list">' + sim.rows.map((r, i) => '<li><b>' + hhmm(r.arr) + "</b>着 " + esc(r.s.name) + '<div class="note">' + (r.h ? "営業 " + esc(r.h.t) : "営業時間不明") + (r.s.note ? "　<b>" + esc(r.s.note) + "</b>" : "") + (r.wait > 0 ? "（開店まで" + Math.round(r.wait) + "分待ち）" : "") + "　前から約" + r.km.toFixed(1) + "km・" + esc(r.s.address || "") + ' <button type="button" class="purchbtn" data-off="' + esc(r.s.id) + '">今日は外す</button> <button type="button" class="purchbtn" data-never="' + esc(r.s.id) + '">もう行かない</button></div></li>').join("") + "</ol>";
       if (S.back) h += '<div class="note">最後の店から出発地まで約' + sim.back.toFixed(1) + "km</div>";
       h += '<div class="actions"><button type="button" class="btn btn-primary" id="trCsv">ツーリングサポーター用に書き出す</button></div>';
       h += '<div class="actions">' + gmapLinks(res.order).map((u, i, a) => '<a class="btn" target="_blank" rel="noopener" href="' + esc(u) + '">Googleマップで開く' + (a.length > 1 ? "（" + (i + 1) + "/" + a.length + "）" : "") + "</a>").join("") + "</div>";
       h += '<div class="note">書き出したCSVは、ツーリングサポーターのWeb版マイページの「My地点」→「地点をインポート」で取り込めます（1回100件まで）。経由地は8か所までなので、9店以上の日はルートを分けてください。移動時間は、まっすぐの距離×1.3を速さで割った目安です。</div>';
     }
-    if (res.left.length) h += '<div class="tr-box"><b>時間内に回れない店（' + res.left.length + "店）</b>" + res.left.map((s) => '<div class="note">' + esc(s.name) + "（" + ((hoursOf(s, day) || {}).t || "営業時間不明") + "）" + (s.note ? " " + esc(s.note) : "") + "</div>").join("") + "</div>";
-    if (S.off.length) h += '<div class="note">外した店 ' + S.off.length + '店 <button type="button" class="purchbtn" id="trOffClear">外した店を戻す</button></div>';
+    if (res.left.length) h += '<div class="tr-box"><b>時間内に回れない店（' + res.left.length + "店）</b>" + res.left.map((s) => '<div class="note">' + esc(s.name) + "（" + ((hoursOf(s, day) || {}).t || "営業時間不明") + "）" + (s.note ? " " + esc(s.note) : "") + ' <button type="button" class="purchbtn" data-never="' + esc(s.id) + '">もう行かない</button></div>').join("") + "</div>";
+    if (S.off.length) h += '<div class="note">今日は外した店 ' + S.off.length + '店 <button type="button" class="purchbtn" id="trOffClear">外した店を戻す</button></div>';
+    if (S.never.length) { const byId = new Map(every().map((x) => [x.id, x])); h += '<details class="tr-box"><summary>もう行かない店（' + S.never.length + '店）</summary>' + S.never.map((id) => '<div class="note">' + esc((byId.get(id) || {}).name || id) + ' <button type="button" class="purchbtn" data-unnever="' + esc(id) + '">戻す</button></div>').join("") + "</details>"; }
     // 自分で足す店
     h += '<details class="tr-box"><summary>店を自分で足す（' + (S.my || []).length + "店）</summary>" +
       '<div class="tr-row"><input id="trMyName" placeholder="店の名前"><input id="trMyAddr" placeholder="住所"><input id="trMyHrs" placeholder="10:00~20:00" size="11"><button type="button" class="purchbtn" id="trMyAdd">住所で足す</button></div>' +
@@ -298,6 +302,8 @@
     main.querySelectorAll("[data-city]").forEach((b) => b.addEventListener("change", () => { const c = b.dataset.city; S.cities = b.checked ? S.cities.concat([c]) : S.cities.filter((x) => x !== c); S.area = ""; S.g = 0; re(); }));
     main.querySelectorAll("[data-g]").forEach((b) => b.addEventListener("click", () => { S.g = +b.dataset.g; re(); }));
     main.querySelectorAll("[data-off]").forEach((b) => b.addEventListener("click", () => { S.off.push(b.dataset.off); re(); }));
+    main.querySelectorAll("[data-never]").forEach((b) => b.addEventListener("click", () => { if (!S.never.includes(b.dataset.never)) S.never.push(b.dataset.never); S.picked = S.picked.filter((x) => x !== b.dataset.never); re(); }));
+    main.querySelectorAll("[data-unnever]").forEach((b) => b.addEventListener("click", () => { S.never = S.never.filter((x) => x !== b.dataset.unnever); re(); }));
     main.querySelectorAll("[data-mydel]").forEach((b) => b.addEventListener("click", () => { S.my = S.my.filter((m) => m.id !== b.dataset.mydel); re(); }));
     on("trPref", "change", (e) => { S.pref = e.target.value; S.cities = []; S.area = ""; S.g = 0; re(); });
     on("trRad", "change", (e) => { S.radius = +e.target.value; S.g = 0; re(); });
