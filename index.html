@@ -169,6 +169,8 @@ td.own .mark { font-size: 9px; font-weight: 400; color: var(--miss-fg); margin-l
 .kh .kn .d { color: var(--muted); font-size: 11px; margin-right: 6px; }
 .kk { display: inline-block; font-size: 10px; color: #fff; background: var(--miss-fg); border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; }
 .chip.kchip { color: var(--fg); }
+.chip.krchip { color: #8a3ab9; border-color: #8a3ab9; }
+.kr .kname { color: #8a3ab9; font-weight: 700; font-size: 11px; }
 .hist { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .hist h2 { margin: 0; font-size: 14px; padding: 8px 12px; background: var(--accent-soft); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .hrow { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; border-top: 1px solid var(--line); padding: 4px 6px 4px 12px; }
@@ -514,7 +516,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         (st.p != null ? "<span>販売 " + yen(st.p) + "円</span>" : "") + "</div>" +
         (auLine(st) ? '<div class="au">' + auLine(st) + "</div>" : "") +
         (vi >= 0 ? '<div class="hitvol">' + (vi + 1) + "巻目：" + esc(st.vol[vi][0] || st.vol[vi][1]) + (function () { const vs = volStatus(st, vi); return vs.length ? "　" + volStatusText(vs) : "　そろっている"; })() + "</div>" : "") +
-        '<div class="chips">' + (khOf(st) ? '<span class="chip kchip">小部屋 <b class="' + khGradeCls(khOf(st).g) + '">' + esc(khOf(st).g || "―") + "</b></span>" : "") + chipsHtml(st) + "</div></button>";
+        '<div class="chips">' + (krOf(st).length ? '<span class="chip krchip">Kronos</span>' : "") + (khOf(st) ? '<span class="chip kchip">小部屋 <b class="' + khGradeCls(khOf(st).g) + '">' + esc(khOf(st).g || "―") + "</b></span>" : "") + chipsHtml(st) + "</div></button>";
     });
     if (list.length > 80) h += '<div class="note">ほかに ' + (list.length - 80) + "セットあります。言葉を足して絞ってください。</div>";
     h += "</div>";
@@ -620,6 +622,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       "</div>";
     h += '<div class="chips">' + chipsHtml(s) + "</div>";
     h += khHtml(s);
+    h += krHtml(s);
     h += "</section>";
 
     // 表
@@ -1424,6 +1427,38 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (k.sold && k.sold.length) h += '<div class="kt"><b>小部屋で売れた</b><span class="num">' + k.sold.map((x) => esc(String(x[0]).slice(5)) + " " + yen(x[1]) + "円").join("・") + "</span></div>";
     if (k.kk && k.kk.length) h += '<div class="kt"><span class="kk">カカリ</span><span>' + k.kk.join("・") + "巻（ソルーさんの投稿から）</span></div>";
     (k.notes || []).forEach((n) => { h += '<div class="kn"><span class="d num">' + esc(n[0]) + " " + esc(n[1]) + "</span>" + esc(n[2]) + "</div>"; });
+    return h + "</div>";
+  }
+
+  // ---------- Kronos（Discordのグループ）：メディア化・値上がり・売れた報告。data/kronos.enc を読む ----------
+  // ASINか、作品名（セット名に含まれるか）で探す。作品名で探すので、巻数違い・版違いのセットにも出る
+  let KR = null;
+  async function loadKronos() {
+    try { const c = localStorage.getItem("sc_kr"); if (c) KR = JSON.parse(c); } catch (e) {}
+    try {
+      const x = await loadEnc("data/kronos.enc");
+      if (x) { KR = x; try { localStorage.setItem("sc_kr", JSON.stringify(KR)); } catch (e) {} }
+    } catch (e) {}
+    if (curView.type === "home") { if (DATA && !DATA.sample) showHome(); } else rerender();
+  }
+  const krCache = new Map();
+  function krOf(s) {
+    if (!KR || !KR.items || !s) return [];
+    const key = (s.a || "") + "|" + (s.t || "");
+    if (krCache.has(key) && krCache.get(key).src === KR) return krCache.get(key).v;
+    const a = String(s.a || "").toUpperCase(), t = norm(s.t);
+    const v = KR.items.filter((it) => (a && (it.a || []).includes(a)) || (t && (it.w || []).some((w) => { const n = norm(w); return n.length >= 3 && t.includes(n); })));
+    krCache.set(key, { src: KR, v });
+    return v;
+  }
+  function krHtml(s) {
+    const its = krOf(s);
+    if (!its.length) return "";
+    const ns = [];
+    its.forEach((it) => (it.n || []).forEach((n) => ns.push(n)));
+    ns.sort((x, y) => String(y[0]).localeCompare(String(x[0])));
+    let h = '<div class="kh kr"><div class="kt"><span class="kname">Kronos</span><span style="font-size:11px;color:var(--muted)">（' + esc(KR.made || "") + " まで）</span></div>";
+    ns.forEach((n) => { h += '<div class="kn"><span class="d num">' + esc(String(n[0]).slice(5)) + "</span>" + esc(n[1]) + "</div>"; });
     return h + "</div>";
   }
 
@@ -2704,6 +2739,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   // 起動：このスマホに保存したデータ → なければ見本
   updatePurchBtn();
   loadKoheya();
+  loadKronos();
   loadAuthor();
   useData(SAMPLE);
   showHome();
