@@ -672,7 +672,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
 
     // 表
     h += '<div class="hbar" id="hbar" hidden><span>←</span><input id="hrange" type="range" min="0" max="1000" value="0" aria-label="表を横に動かす"><span>→</span><span class="hl" id="hlab"></span></div>';
-    h += '<div class="actions"><button id="addCol" type="button">＋列を足す</button><span class="note">' + (s.own.some((o) => o.virt) ? "「新」の列はスマホで足した列。まとめて実行で、Excelのこのブロックに新しい列ができて書き込まれます" : "書き込む列がないとき（初めて集める・全部そろっている）に足す") + "</span></div>";
+    const lastV = (function () { for (let k = s.own.length - 1; k >= 0; k--) if (s.own[k].virt) return k; return -1; })();
+    const lastVEmpty = lastV >= 0 && !s.vol.some((v, i) => entryAt(s, s.own[lastV], i + 1));
+    h += '<div class="actions"><button id="addCol" type="button">＋列を足す</button>' + (lastVEmpty ? '<button id="delCol" type="button">足した列を取り消す</button>' : "") + '<span class="note">' + (s.own.some((o) => o.virt) ? "「新」の列はスマホで足した列。まとめて実行で、Excelのこのブロックに新しい列ができて書き込まれます。値段を入れた列を取り消すときは、先にその値段を「消す」で消す" : "書き込む列がないとき（初めて集める・全部そろっている）に足す") + "</span></div>";
     h += '<div class="tablebox" id="tbox"><table class="num"><thead><tr><th class="fx1">巻</th><th class="fx2" style="text-align:left">書名</th><th>最新</th><th>参考</th><th>目安' + (aimCol != null ? "<br>" + circled(aimCol) : "") + '</th>';
     cols.forEach((x) => { h += '<th class="own">' + circled(x.i) + (s.own[x.i].virt ? "<br>新" : "") + "</th>"; });
     past.forEach((x, k) => { h += '<th' + (k === 0 ? ' class="own"' : "") + ">" + x.h + "</th>"; });
@@ -707,6 +709,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     main.querySelectorAll("td.own.tap").forEach((td) => td.addEventListener("click", () => openEditor(si, +td.dataset.oi, +td.dataset.v)));
     const ac = $("addCol");
     if (ac) ac.addEventListener("click", () => { s.own.push(virtCol(s, s.own.filter((o) => o.virt).length + 1)); edPos = null; showSet(si, vi, false, true); });
+    const dcb = $("delCol");   // 足した列（まだ何も入れていない一番右の「新」の列）を取り消す
+    if (dcb) dcb.addEventListener("click", () => { s.own.splice(lastV, 1); edPos = null; showSet(si, vi, false, true); });
     const hr = $("hitrow");
     if (keepScroll) window.scrollTo(0, scrollY);
     else if (hr && !$("verdict")) hr.scrollIntoView({ block: "center" }); else window.scrollTo(0, 0);
