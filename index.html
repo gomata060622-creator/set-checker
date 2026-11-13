@@ -103,6 +103,7 @@ td.own.out { color: var(--line); background: transparent; }
 .hbar input[type=range] { flex: 1; min-width: 0; height: 28px; accent-color: var(--accent); }
 .hbar .hl { white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* 値段を入れているマス：黄色く光らせる */
+td.own.bsel { background: #ffe14d !important; color: #1d2530 !important; outline: 3px solid var(--accent); outline-offset: -3px; }
 td.own.editing { background: #ffe14d !important; color: #1d2530 !important; outline: 3px solid var(--accent); outline-offset: -3px; }
 @media (prefers-reduced-motion: no-preference) { td.own.editing { animation: edblink 1s ease-in-out infinite alternate; } }
 @keyframes edblink { from { background: #ffe14d; } to { background: #fff6c4; } }
@@ -675,7 +676,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     h += '<div class="hbar" id="hbar" hidden><span>←</span><input id="hrange" type="range" min="0" max="1000" value="0" aria-label="表を横に動かす"><span>→</span><span class="hl" id="hlab"></span></div>';
     const lastV = (function () { for (let k = s.own.length - 1; k >= 0; k--) if (s.own[k].virt) return k; return -1; })();
     const lastVEmpty = lastV >= 0 && !s.vol.some((v, i) => entryAt(s, s.own[lastV], i + 1));
-    h += '<div class="actions"><button id="addCol" type="button">＋列を足す</button>' + (lastVEmpty ? '<button id="delCol" type="button">足した列を取り消す</button>' : "") + '<span class="note">' + (s.own.some((o) => o.virt) ? "「新」の列はスマホで足した列。まとめて実行で、Excelのこのブロックに新しい列ができて書き込まれます。値段を入れた列を取り消すときは、先にその値段を「消す」で消す" : "書き込む列がないとき（初めて集める・全部そろっている）に足す") + "</span></div>";
+    h += '<div class="actions"><button id="bulkBtn" type="button"' + (bulk && bulk.si === si ? ' class="on"' : "") + ">" + (bulk && bulk.si === si ? "まとめて入れるをやめる" : "まとめて入れる") + '</button><button id="addCol" type="button">＋列を足す</button>' + (lastVEmpty ? '<button id="delCol" type="button">足した列を取り消す</button>' : "") + '<span class="note">' + (s.own.some((o) => o.virt) ? "「新」の列はスマホで足した列。まとめて実行で、Excelのこのブロックに新しい列ができて書き込まれます。値段を入れた列を取り消すときは、先にその値段を「消す」で消す" : "書き込む列がないとき（初めて集める・全部そろっている）に足す") + "</span></div>";
     h += '<div class="tablebox" id="tbox"><table class="num"><thead><tr><th class="fx1">巻</th><th class="fx2" style="text-align:left">書名</th><th>最新</th><th>参考</th><th>目安' + (aimCol != null ? "<br>" + circled(aimCol) : "") + '</th>';
     cols.forEach((x) => { h += '<th class="own">' + circled(x.i) + (s.own[x.i].virt ? "<br>新" : "") + "</th>"; });
     past.forEach((x, k) => { h += '<th' + (k === 0 ? ' class="own"' : "") + ">" + x.h + "</th>"; });
@@ -707,7 +708,12 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const back = $("back");
     if (back) back.addEventListener("click", () => showList(lastList.intro));
     setupHbar(keepScroll);
-    main.querySelectorAll("td.own.tap").forEach((td) => td.addEventListener("click", () => openEditor(si, +td.dataset.oi, +td.dataset.v)));
+    main.querySelectorAll("td.own.tap").forEach((td) => td.addEventListener("click", () => {
+      if (bulk && bulk.si === si) bulkTap(td); else openEditor(si, +td.dataset.oi, +td.dataset.v);
+    }));
+    const bb = $("bulkBtn");
+    if (bb) bb.addEventListener("click", () => { if (bulk && bulk.si === si) { bulk = null; closeEditor(); } else { closeEditor(); bulk = { si, oi: -1, sel: [] }; } showSet(si, vi, false, true); });
+    if (bulk && bulk.si === si) bulkMark();
     const ac = $("addCol");
     if (ac) ac.addEventListener("click", () => { s.own.push(virtCol(s, s.own.filter((o) => o.virt).length + 1)); edPos = null; showSet(si, vi, false, true); });
     const dcb = $("delCol");   // 足した列（まだ何も入れていない一番右の「新」の列）を取り消す
@@ -1053,6 +1059,64 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     try { shared = allEntries().filter((e) => e && !e.kari && e.p > 0).map((e) => e.p); } catch (e) {}
     const hide = qpHidden();
     return [...new Set(base.concat(ex.filter((x) => x > 0), shared))].filter((x) => !hide.includes(x)).sort((a, b) => a - b);   // 手で入れた値段も足して安い順（消したボタンは出さない）
+  }
+
+  // ---------- まとめて入れる：1つの列で、空いているマスをいくつか選んで、同じ値段を入れる（2026-11-14） ----------
+  //   1マス目を押してから最後のマスを押すと、その間の空いているマスが全部選ばれる。選んだマスをもう一度押すと外れる。値段が入っているマスは選べない
+  let bulk = null;   // { si, oi, sel: [巻番号…] }
+  function bulkMark() {
+    main.querySelectorAll("td.own.bsel").forEach((t) => t.classList.remove("bsel"));
+    if (!bulk) return;
+    bulk.sel.forEach((v) => { const td = main.querySelector('td.own[data-oi="' + bulk.oi + '"][data-v="' + v + '"]'); if (td) td.classList.add("bsel"); });
+    bulkSheet();
+  }
+  function bulkTap(td) {
+    if (!td.classList.contains("miss")) { tToast("値段が入っているマスは選べません（直すときは「まとめて入れる」をやめてから押す）"); return; }
+    const oi = +td.dataset.oi, v = +td.dataset.v;
+    if (bulk.oi !== oi) { bulk.oi = oi; bulk.sel = []; }
+    const k = bulk.sel.indexOf(v);
+    if (k >= 0) bulk.sel.splice(k, 1);
+    else if (bulk.sel.length === 1) {
+      // 2つ目：1つ目との間の空いているマスを全部
+      const a = Math.min(bulk.sel[0], v), b = Math.max(bulk.sel[0], v);
+      for (let x = a; x <= b; x++) {
+        const c = main.querySelector('td.own.miss[data-oi="' + oi + '"][data-v="' + x + '"]');
+        if (c && !bulk.sel.includes(x)) bulk.sel.push(x);
+      }
+    } else bulk.sel.push(v);
+    bulk.sel.sort((a, b) => a - b);
+    bulkMark();
+  }
+  function bulkSheet() {
+    if (!bulk || !bulk.sel.length) { sheet.hidden = true; sheet.innerHTML = ""; return; }
+    const s = DATA.sets[bulk.si], o = s.own[bulk.oi];
+    const rng = bulk.sel.length > 3 ? bulk.sel[0] + "〜" + bulk.sel[bulk.sel.length - 1] + "巻のうち" : bulk.sel.join("・") + "巻";
+    sheet.innerHTML = '<div class="st">まとめて入れる</div>' +
+      '<div class="sv num">' + circled(bulk.oi) + "の列（" + esc(o.c) + "列）　" + rng + "　" + bulk.sel.length + "冊</div>" +
+      '<div class="quick">' + quickPrices().map((p) => '<button type="button" class="num" data-bq="' + p + '">' + yen(p) + "</button>").join("") + '<button type="button" class="num" data-bq="0">0</button></div>' +
+      '<form id="bkForm" class="row"><input id="bkPrice" type="text" inputmode="numeric" autocomplete="off" placeholder="1冊の値段" value="' + (localStorage.getItem("sc_lastp") || "") + '"><span>円</span>' +
+      '<button type="submit" class="btn-primary">' + bulk.sel.length + '冊に入れる</button><button type="button" id="bkClear">選び直す</button></form><div id="bkErr" class="err" hidden></div>';
+    sheet.hidden = false;
+    const inp = $("bkPrice");
+    inp.addEventListener("focus", () => { try { inp.select(); } catch (e) {} });
+    sheet.querySelectorAll("[data-bq]").forEach((b) => b.addEventListener("click", () => { inp.value = b.dataset.bq; $("bkForm").requestSubmit(); }));
+    $("bkClear").addEventListener("click", () => { bulk.sel = []; bulkMark(); });
+    $("bkForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const p = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10);
+      if (!(p >= 0)) { const er = $("bkErr"); er.textContent = "値段を数字で入れてください"; er.hidden = false; return; }
+      const s2 = DATA.sets[bulk.si], o2 = s2.own[bulk.oi], sel = bulk.sel.slice(), si = bulk.si;
+      notePrice(p);
+      bulk = null;
+      sheet.hidden = true; sheet.innerHTML = "";
+      sel.forEach((v) => {
+        if (entryAt(s2, o2, v)) return;   // 念のため：入っているマスは上書きしない
+        const vol = s2.vol[v - 1] || [];
+        const data = { id: newId(), at: new Date().toISOString(), d: today(), s: s2.s, gc: s2.col, a: s2.a || "", t: s2.t || "", oc: o2.c, oi: s2.own.indexOf(o2), v, vt: vol[0] || "", j: vol[1] || "", p, kari: false, dc: discR, done: false };
+        change({ op: "set", id: data.id, data });
+      });
+      tToast(sel.length + "冊に " + yen(p) + "円を入れました");
+    });
   }
   function openEditor(si, oi, v) {
     edPos = { y: window.scrollY, l: hLeft, t: hTop };
