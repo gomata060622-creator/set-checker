@@ -1519,6 +1519,31 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     } catch (e) {}
     if (curView.type === "shelfList") showShelfList(); else if (curView.type === "news") showNews();
   }
+  // 分類の名前を「DVD・ブルーレイ > アニメ > 国内アニメ > テレビシリーズ」の形に（本は「書籍」を省く）
+  function bocPath(b) {
+    const n = String(b[1]).split(">");
+    return (n[0] === "書籍" ? n.slice(1) : n).join(" > ");
+  }
+  const boGenreCache = new Map();
+  async function boGenre(jan) {
+    jan = String(jan || "").replace(/\D/g, "");
+    if (!jan) return null;
+    if (BOC && BOC[jan]) return bocPath(BOC[jan]);
+    if (boGenreCache.has(jan)) return boGenreCache.get(jan);
+    let res = null;
+    try {
+      const get = async (u) => { const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 8000); try { const r = await fetch(u, { signal: ctl.signal }); return r.ok ? await r.text() : ""; } finally { clearTimeout(tm); } };
+      const sr = await get("https://shopping.bookoff.co.jp/search/keyword/" + jan);
+      const m = sr.match(/\/(used|new)\/(\d{10})/);
+      if (m) {
+        const p = await get("https://shopping.bookoff.co.jp/" + m[1] + "/" + m[2]);
+        const g = [...p.matchAll(/\/search\/genre\/(\d+)" class="link">([^<]+)</g)];
+        if (g.length) res = bocPath([g.map((x) => x[1]).join(">"), g.map((x) => x[2].trim()).join(">")]);
+      } else if (sr) res = "";   // ブックオフオンラインにない
+    } catch (e) {}
+    if (res !== null) boGenreCache.set(jan, res);
+    return res;
+  }
   function bocOf(st) {
     if (!BOC || !st || !st.vol) return null;
     for (let i = 0; i < Math.min(st.vol.length, 3); i++) { const j = st.vol[i] && st.vol[i][1]; if (j && BOC[j]) return BOC[j]; }
@@ -1539,8 +1564,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const key = cc.padEnd(10, "0") + "|" + (byTitle ? "" : pr + sub + "|" + au) + "|" + title;
       return { corner, sub, key, label: corner + (sub ? "・" + sub : ""), src: "ブックオフ", au };
     }
-    // 本：上から2つ目（文庫の小説・教養など）を売り場、その下を棚の札にする
-    const corner = names[1] || names[0] || "その他";
+    // 本：上から2つ目（文庫の小説・教養など）を売り場、その下を棚の札にする。本以外（DVD・ブルーレイ、ゲームなど）は大分類も付ける
+    const corner = codes[0] === "12" ? (names[1] || names[0] || "その他") : names[0] + (names[1] ? "・" + names[1] : "");
     const sub = names.slice(2).join(" > ");
     const key = String(codes[codes.length - 1]).padEnd(10, "0") + "|" + au + "|" + title;
     return { corner, sub, key, label: corner + (sub ? " > " + sub : ""), src: "ブックオフ", au };
@@ -1642,6 +1667,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     curView = { type: "shelfList" };
     if (!DATA || DATA.sample) return showHome();
     const all = localStorage.getItem("sc_shelf_all") === "1";
+    const only = localStorage.getItem("sc_shelf_only") || "";
     const rows = [];
     DATA.sets.forEach((st, si) => {
       const part = ownStats(st).filter((x) => !x.full);
@@ -1649,17 +1675,20 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const c = colCalc(st, part[0].i);
       if (c.done) return;
       if (!all && !(c.lim != null && c.lim >= 100)) return;   // 1冊100円以上で買える（利益1,000円が残る）セットだけ
-      rows.push({ si, st, c, sh: shelfOf(st.t, st) });
+      const sh = shelfOf(st.t, st);
+      if (only && (sh.src ? sh.corner : "推測：" + sh.corner) !== only) return;
+      rows.push({ si, st, c, sh });
     });
     rows.sort((x, y) => x.sh.key.localeCompare(y.sh.key, "ja"));
     let h = '<div class="callout"><div><b>棚の順</b>（集めているセットを、ブックオフの棚の並びで）</div><div class="note">店の端から順に見ていけます。売り場ごとに分け、コミックは出版社 → 作者（少女・文庫コミック・ワイドはタイトル）、本は棚の札 → 作者の順。「推測」はブックオフで分類が取れなかったセット（最後にまとめて出ます）。</div>' +
       '<div class="actions"><button type="button" data-sa="0"' + (all ? "" : ' class="on"') + '>1冊100円以上で買えるセット</button><button type="button" data-sa="1"' + (all ? ' class="on"' : "") + ">集めている全部</button>" +
-      '<span class="note">' + rows.length + "セット</span></div></div>";
+      (only ? '<button type="button" id="shAll">全部の売り場に戻す</button>' : "") +
+      '<span class="note">' + (only ? esc(only) + "だけ・" : "売り場の見出しを押すと、その売り場だけ出ます・") + rows.length + "セット</span></div></div>";
     let lastC = null, lastS = null;
     const heads = [];
     rows.forEach((r) => {
       const cn = r.sh.src ? r.sh.corner : "推測：" + r.sh.corner;
-      if (cn !== lastC) { lastC = cn; lastS = null; heads.push(cn); h += '<div class="shelfhead" id="sh' + (heads.length - 1) + '">' + esc(cn) + "</div>"; }
+      if (cn !== lastC) { lastC = cn; lastS = null; heads.push(cn); h += '<div class="shelfhead" id="sh' + (heads.length - 1) + '" data-only="' + esc(cn) + '" role="button">' + esc(cn) + "</div>"; }
       if (r.sh.sub && r.sh.sub !== lastS && r.sh.src) { lastS = r.sh.sub; h += '<div class="note" style="padding:6px 4px 2px;font-weight:700">' + esc(r.sh.sub) + "</div>"; }
       const miss = r.c.miss.length;
       h += '<button type="button" class="item" data-si="' + r.si + '"><div class="t">' + esc(r.st.t || "（セット名なし）") + "</div>" +
@@ -1671,6 +1700,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const toc = heads.length > 1 ? '<div class="chips">' + heads.map((x, i) => '<a class="chip" href="#sh' + i + '">' + esc(x) + "</a>").join("") + "</div>" : "";
     main.innerHTML = h.replace("</div></div>", "</div>" + toc + "</div>");
     main.querySelectorAll("[data-sa]").forEach((b) => b.addEventListener("click", () => { localStorage.setItem("sc_shelf_all", b.dataset.sa); showShelfList(); }));
+    main.querySelectorAll(".shelfhead[data-only]").forEach((b) => b.addEventListener("click", () => { localStorage.setItem("sc_shelf_only", b.dataset.only); showShelfList(); window.scrollTo(0, 0); }));
+    const sa = $("shAll"); if (sa) sa.addEventListener("click", () => { localStorage.removeItem("sc_shelf_only"); showShelfList(); window.scrollTo(0, 0); });
     main.querySelectorAll(".item[data-si]").forEach((b) => b.addEventListener("click", () => { showSet(+b.dataset.si, -1, false); }));
   };
   // ---------- ニュース：Kronosの最近の情報を新しい順に（押すとそのセットを探す） ----------
@@ -1929,6 +1960,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         '目標額: <b class="red' + rcls(ut) + '">' + ynum(ut) + "</b>円" +
       "</div></div>" +
       (r.tag ? '<div class="tagline num">値札 ' + yen(r.tag) + "円 → 中古で売れたら利益 <b class=\"" + (r.usedP && profitOf(r, r.usedP) - r.tag < 0 ? "minus" : "") + "\">" + (r.usedP ? yen(profitOf(r, r.usedP) - r.tag) + "円" : "-") + "</b></div>" : "") +
+      (r.bo ? '<div class="note">ブックオフの棚：' + esc(r.bo) + "</div>" : r.bo === "" ? '<div class="note">ブックオフの棚：オンラインストアにないので分からない</div>' : "") +
       '<div class="trow-foot"><span class="note num">検索日: ' + esc(fmtDT(r.at)) + "</span>" +
         (curView.type === "tan" ? (tPick ? '<label class="tpick"><input type="checkbox" data-pick="' + esc(r.id) + '"' + (tPicked.has(r.id) ? " checked" : "") + "> 選ぶ</label>" :
           ((r.arrId ? '<span class="pill done">到着に入れた</span>' : "") + '<button type="button" class="tarr" data-buy="' + esc(r.id) + '">仕入れ</button>')) : "") +
@@ -2062,6 +2094,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       if (curView.type === "tan") showTan();
     };
     put();
+    if (!r.err && r.jan && r.bo == null) {
+      boGenre(r.jan).then((g) => { if (g != null) { r.bo = g; put(true); } });
+    }
     if (needOff) {
       try { r.offers = await offersOf(r.asin); r.offAt = new Date().toISOString(); r.usedL = "中古"; usedFromOffers(r); } catch (e) { r.usedL = "中古（送料別・良い以上か不明）"; }
       put(true);
@@ -2208,6 +2243,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const np = profitOf(r, r.newP), up = profitOf(r, r.usedP);
     let h = '<section class="head"><h1>' + esc(r.t) + '</h1><div class="note num">ASIN ' + esc(r.asin) + "　JAN " + esc(r.jan || "-") + "　" + esc(r.bind) + "</div>" +
       '<div class="tdg">' + (r.img ? '<img src="' + esc(r.img) + '" alt="">' : "") + graphBox(r, 300, 180, 900, 540) + "</div>" +
+      (r.bo ? '<div class="note">ブックオフの棚：<b>' + esc(r.bo) + "</b></div>" : "") +
       '<table class="tdt num"><tr><th>順位</th><td>' + ynum(r.rank) + " 位</td></tr>" +
       "<tr><th>新品最安値" + (r.newL ? "（" + esc(r.newL) + "）" : "") + "</th><td>" + ynum(r.newP) + " 円</td></tr>" +
       '<tr><th>　粗利益</th><td class="' + rcls(np) + '">' + ynum(np) + " 円</td></tr><tr><th>　目標利益達成額</th><td>" + ynum(targetOf(r, r.newP)) + " 円</td></tr>" +
