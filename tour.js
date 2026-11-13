@@ -413,11 +413,32 @@
       // 1) 店の一覧（ブックオフ・古本市場など）から
       const ws = q.replace(/ブックオフ/g, "BOOKOFF").split(/[\s　]+/).filter(Boolean);
       all().filter((x) => ws.every((w) => (x.name + (x.address || "")).includes(w))).slice(0, 3).forEach((x) => hits.push({ lat: x.lat, lng: x.lng, name: x.name, sub: x.address || "" }));
-      // 2) 地図のお店・施設（OpenStreetMap）
+      // 2) 地図のお店・施設（OpenStreetMap）。名前のうろ覚え（「モーターサイクル」と「モータースタイル」など）にも合うように、前の部分だけで探し直す
+      const jp = (t) => t.split(", ").reverse().filter((x) => !/^\d{3}-|日本/.test(x)).join("");
       try {
         const r = await (await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&limit=5&accept-language=ja&q=" + encodeURIComponent(q))).json();
-        r.forEach((x) => hits.push({ lat: +x.lat, lng: +x.lon, name: x.name || q, sub: x.display_name.split(", ").reverse().filter((t) => !/^\d{3}-|日本/.test(t)).join("") }));
+        r.forEach((x) => hits.push({ lat: +x.lat, lng: +x.lon, name: x.name || q, sub: jp(x.display_name) }));
       } catch (e) {}
+      if (!hits.length) {
+        const [w0, ...rest] = ws, tries = [];
+        [1, 0.75, 0.6, 0.45].forEach((f) => { const n = Math.max(3, Math.round(w0.length * f)); const t = [w0.slice(0, n)].concat(rest).join(" "); if (!tries.includes(t)) tries.push(t); });
+        const c = S.home.lat ? S.home : HOME0;
+        for (const t of tries) {
+          try {
+            const r = await (await fetch("https://photon.komoot.io/api/?limit=5&lat=" + c.lat + "&lon=" + c.lng + "&q=" + encodeURIComponent(t))).json();
+            const fs = (r.features || []).filter((f) => f.properties.countrycode === "JP" && f.properties.name);
+            if (!fs.length) continue;
+            let names = {};
+            try {
+              const ids = fs.map((f) => f.properties.osm_type + f.properties.osm_id).join(",");
+              const lk = await (await fetch("https://nominatim.openstreetmap.org/lookup?format=jsonv2&accept-language=ja&osm_ids=" + ids)).json();
+              lk.forEach((x) => { names[x.osm_type[0].toUpperCase() + x.osm_id] = jp(x.display_name); });
+            } catch (e) {}
+            fs.forEach((f) => { const pr = f.properties; hits.push({ lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], name: pr.name, sub: names[pr.osm_type + pr.osm_id] || [pr.state, pr.city].filter(Boolean).join(" ") }); });
+            break;
+          } catch (e) {}
+        }
+      }
       // 3) 住所（国土地理院）
       if (!hits.length) {
         try {
