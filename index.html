@@ -193,6 +193,8 @@ td.own .mark { font-size: 9px; font-weight: 400; color: var(--miss-fg); margin-l
 .tr .tr-sale2 { color: #8a5a00; }
 .tr .tr-ev { border-top: 1px dashed var(--line); padding: 6px 0; }
 .tr .tr-star { color: #e6a700; }
+.shelf { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.shelfhead { font-weight: 700; padding: 10px 4px 4px; border-bottom: 2px solid var(--accent); margin-top: 6px; }
 .avgl { font-size: 13px; margin-top: 2px; color: var(--good); }
 .kname { color: #8a3ab9; font-weight: 700; font-size: 11px; }
 .hist { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
@@ -638,6 +640,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     h += '<div class="facts">' +
       fact("販売価格", s.p != null ? yen(s.p) + "円" : "―") +
       fact("全巻数", (s.n != null ? s.n : s.vol.length) + "巻") +
+      ((sh) => fact("棚", esc(sh.label) + (sh.src ? "" : '<span class="k">（推測）</span>')))(shelfOf(s.t, s)) +
       fact("平均仕入価格", s.avg != null ? yen(s.avg) + "円" : "―", s.avg < 0 ? "minus" : "") +
       fact("利益（Amazonで全部買ったら）", s.pr != null ? yen(s.pr) + "円" : "―", s.pr < 0 ? "minus" : "") +
       (estProfit ? fact(circled(aimCol) + "をそろえたら（過去の値段で）", yen(estProfit.v) + "円" + estProfit.p + (estProfit.noPast ? '<span class="k">（' + estProfit.noPast + "冊は目安で計算）</span>" : ""), estProfit.v < 0 ? "minus" : "") : "") +
@@ -1440,6 +1443,81 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const k = KH.asin && s.a ? KH.asin[String(s.a).toUpperCase()] : null;
     return (k && KH.sets[k]) || KH.sets[s.s + "|" + s.col] || null;
   };
+  // ---------- 棚（ブックオフの売り場の並び）：売り場 → 出版社 or 五十音 → 作品名 ----------
+  //   1) ソルーさんの売り場（「青年コミックコーナー講談社」「文庫コミックコーナー「さ」のところ」）があればそれを使う
+  //   2) なければ、セット名のレーベル・出版社・版から推測する（分からないものは「その他」）
+  const CORNERS = ["少年コミック", "少女コミック", "青年コミック", "女性コミック", "文庫コミック", "ワイド・完全版", "ラノベ文庫", "文庫本", "新書", "単行本", "児童書", "絵本", "その他"];
+  const PUBS = ["アスキー", "秋田書店", "一迅社", "角川書店", "KADOKAWA", "講談社", "集英社", "小学館", "少年画報社", "新潮社", "スクウェアエニックス", "竹書房", "徳間書店", "日本文芸社", "白泉社", "双葉社", "芳文社", "マッグガーデン", "リイド社"];
+  const LABELS = [
+    [/ヤングジャンプ|グランドジャンプ|ジャンプ改|ウルトラジャンプ|YJ/, "青年コミック", "集英社"],
+    [/ジャンプ/, "少年コミック", "集英社"],
+    [/りぼん|マーガレット|クイーンズ|ココハナ|別冊マーガレット|ザマーガレット/, "少女コミック", "集英社"],
+    [/ヤングマガジン|ヤンマガ|モーニング|アフタヌーン|イブニング|KCデラックス|ヤンKC/, "青年コミック", "講談社"],
+    [/なかよし|デザート|別冊フレンド|別フレ|BE LOVE|Kiss|講談社コミックスフレンド/, "少女コミック", "講談社"],
+    [/マガジン|講談社コミックス|KC/, "少年コミック", "講談社"],
+    [/ビッグコミック|スピリッツ|ビッグ|ヤングサンデー|IKKI|ゲッサン/, "青年コミック", "小学館"],
+    [/フラワー|ちゃお|Cheese|ベツコミ|少女コミック|プチコミ/, "少女コミック", "小学館"],
+    [/サンデー|少年サンデー/, "少年コミック", "小学館"],
+    [/ヤングチャンピオン|チャンピオンRED/, "青年コミック", "秋田書店"],
+    [/チャンピオン/, "少年コミック", "秋田書店"],
+    [/プリンセス|ボニータ/, "少女コミック", "秋田書店"],
+    [/花とゆめ|LaLa|ララ|メロディ|白泉社文庫/, "少女コミック", "白泉社"],
+    [/ヤングアニマル|ジェッツ/, "青年コミック", "白泉社"],
+    [/ガンガン|スクウェア|エニックス/, "少年コミック", "スクウェアエニックス"],
+    [/角川|カドカワ|KADOKAWA|電撃|ドラゴン/, "青年コミック", "角川書店"],
+    [/バンブー|竹書房/, "青年コミック", "竹書房"],
+    [/ヤングキング|少年画報社/, "青年コミック", "少年画報社"],
+    [/アクション|双葉社/, "青年コミック", "双葉社"],
+    [/ニチブン|日本文芸社/, "青年コミック", "日本文芸社"],
+    [/リイド/, "青年コミック", "リイド社"],
+    [/ビームコミックス|エンターブレイン|アスキー/, "青年コミック", "アスキー"],
+  ];
+  const toHira = (c) => c.replace(/[ァ-ヶ]/g, (x) => String.fromCharCode(x.charCodeAt(0) - 0x60));
+  const kanaHead = (t) => {
+    const m = String(t || "").replace(/^[【\[（(][^】\]）)]*[】\]）)]\s*/, "").replace(/^[「『\s]+/, "").match(/^[ぁ-ゖァ-ヶ]/);
+    if (!m) return "";
+    const h = toHira(m[0]);
+    const small = { "ぁ": "あ", "ぃ": "い", "ぅ": "う", "ぇ": "え", "ぉ": "お", "っ": "つ", "ゃ": "や", "ゅ": "ゆ", "ょ": "よ", "ゎ": "わ" };
+    return (small[h] || h).normalize("NFD")[0];   // 濁点を外す（が→か）
+  };
+  function shelfOf(t, st) {
+    const k = st ? khOf(st) : null;
+    const pl = k && k.place ? String(k.place) : "";
+    let corner = "", sub = "", src = "";
+    if (pl) {
+      const cm = pl.match(/^(.+?)コーナー/);
+      const c0 = cm ? cm[1] : pl;
+      corner = CORNERS.find((c) => c0.includes(c.replace("・", "")) || c0.includes(c)) || (c0.includes("ワイド") ? "ワイド・完全版" : c0.includes("ラノベ") ? "ラノベ文庫" : c0);
+      const rest = cm ? pl.slice(cm[0].length) : "";
+      const km = rest.match(/「(.)」/);
+      sub = km ? km[1] : rest.replace(/のところ|です|〜|～/g, "").trim();
+      src = "小部屋";
+    }
+    const title = String(t || (st && st.t) || "");
+    if (!corner) {
+      const sheet = st ? String(st.s || "") : "", cat = st ? String(st.cat || "") : "";
+      if (/ワイド|完全版|愛蔵版|新装版|復刻版/.test(title)) corner = "ワイド・完全版";
+      else if (/文庫/.test(title) && /コミック|漫画|マンガ/.test(title + cat)) corner = "文庫コミック";
+      else {
+        const L = LABELS.find(([re]) => re.test(title));
+        if (L) { corner = L[1]; sub = L[2]; }
+        else if (/児童|絵本/.test(cat)) corner = cat.includes("絵本") ? "絵本" : "児童書";
+        else if (/新書/.test(cat)) corner = "新書";
+        else if (/文庫/.test(cat) || /文庫/.test(title)) corner = "文庫本";
+        else if (/単行本/.test(cat)) corner = "単行本";
+        else if (/コミック/.test(title) || /少年少女青年/.test(sheet)) corner = "コミック（売り場不明）";
+        else corner = "その他";
+      }
+    }
+    if (!sub) {
+      if (/文庫コミック|ワイド/.test(corner)) sub = kanaHead(title);
+      else { const p = PUBS.find((x) => title.includes(x)); if (p) sub = p; }
+    }
+    const ci = CORNERS.indexOf(corner), pi = PUBS.indexOf(sub);
+    const key = String(ci < 0 ? (corner.startsWith("コミック") ? 35 : 125) : ci * 10).padStart(4, "0") + "|" + (pi >= 0 ? String(pi).padStart(3, "0") : sub ? "500" + sub : "999") + "|" + title;
+    const label = corner + (sub ? (sub.length === 1 ? "「" + sub + "」" : "・" + sub) : "");
+    return { corner, sub, key, label, src };
+  }
   const khGradeCls = (g) => (g === "◎" || g === "○" ? "g1" : g === "×" ? "g3" : "");
   function khHtml(s) {
     const k = khOf(s);
@@ -1513,19 +1591,25 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     rows.sort((x, y) => y.d.localeCompare(x.d));
     const shown = rows.filter((r) => r.src === "Kronos").concat(rows.filter((r) => r.src === "小部屋").slice(0, 40)).sort((x, y) => y.d.localeCompare(x.d));
     rows.length = 0; shown.forEach((r) => rows.push(r));
+    const byShelf = localStorage.getItem("sc_news_shelf") === "1";
+    rows.forEach((r) => { r.sh = shelfOf(r.w, r.si != null ? DATA.sets[r.si] : (DATA && !DATA.sample ? DATA.sets.find((st) => krOf(st).includes(r.it)) : null)); });
+    if (byShelf) rows.sort((x, y) => x.sh.key.localeCompare(y.sh.key, "ja"));
     const setOf = (r) => r.si != null ? DATA.sets[r.si] : DATA && !DATA.sample ? DATA.sets.find((st) => krOf(st).includes(r.it)) : null;
     const has = (r) => !!setOf(r);
     const limHtml = (r) => { const st = setOf(r), L = st && avgLimit(st); return L ? '<div class="avgl num">' + (L.v > 0 ? "1巻平均 <b>" + yen(L.v) + "円</b>までで揃えれば利益1,000円（" + L.n + "巻）" : '<span class="minus">利益1,000円は出ない（1巻平均 ' + yen(L.v) + "円）</span>") + "</div>" : ""; };
-    let h = '<div class="callout"><div><b>ニュース</b>（Kronosとセットの小部屋の最近の情報）</div><div class="note">押すと、そのセットを開きます。「登録済み」はセットデータにあるもの。1巻平均は、販売価格から手数料と利益1,000円を引いて巻数で割った金額です。</div></div>';
+    let h = '<div class="callout"><div><b>ニュース</b>（Kronosとセットの小部屋の最近の情報）</div><div class="note">押すと、そのセットを開きます。「登録済み」はセットデータにあるもの。1巻平均は、販売価格から手数料と利益1,000円を引いて巻数で割った金額です。棚はソルーさんの売り場、なければセット名から推測（店によって違うことがあります）。</div><div class="row"><button type="button" class="purchbtn' + (byShelf ? "" : " dcon") + '" data-ns="0">新しい順</button> <button type="button" class="purchbtn' + (byShelf ? " dcon" : "") + '" data-ns="1">棚の順</button></div></div>';
     if (!rows.length) h += '<div class="empty"><b>まだ情報がありません</b></div>';
     else {
       h += '<section class="day">';
+      let lastC = null;
       rows.forEach((r) => {
-        h += '<button type="button" class="item newsrow" data-w="' + esc(r.w) + '"' + (r.si != null ? ' data-si="' + r.si + '"' : "") + '><div class="sub num"><span>' + esc(r.d.slice(5)) + '</span><span class="' + (r.src === "Kronos" ? "kname" : "") + '">' + r.src + "</span>" + (has(r) ? '<span class="chip">登録済み</span>' : "") + '</div><div class="t">' + esc(r.w) + '</div><div class="au">' + esc(r.t) + "</div>" + limHtml(r) + "</button>";
+        if (byShelf && r.sh.corner !== lastC) { lastC = r.sh.corner; h += '<div class="shelfhead">' + esc(r.sh.corner) + "</div>"; }
+        h += '<button type="button" class="item newsrow" data-w="' + esc(r.w) + '"' + (r.si != null ? ' data-si="' + r.si + '"' : "") + '><div class="sub num"><span>' + esc(r.d.slice(5)) + '</span><span class="' + (r.src === "Kronos" ? "kname" : "") + '">' + r.src + "</span>" + (has(r) ? '<span class="chip">登録済み</span>' : "") + '</div><div class="t">' + esc(r.w) + '</div><div class="au">' + esc(r.t) + "</div>" + limHtml(r) + '<div class="shelf">棚：' + esc(r.sh.label) + (r.sh.src ? "" : "（推測）") + "</div></button>";
       });
       h += "</section>";
     }
     main.innerHTML = h;
+    main.querySelectorAll("[data-ns]").forEach((b) => b.addEventListener("click", () => { localStorage.setItem("sc_news_shelf", b.dataset.ns); showNews(); }));
     main.querySelectorAll(".newsrow").forEach((b) => b.addEventListener("click", () => { if (b.dataset.si) { showSet(+b.dataset.si, -1, false); } else { q.value = b.dataset.w; search(b.dataset.w); } window.scrollTo(0, 0); }));
   };
   // ---------- 店回り（tour.js に中身。回る店を選んで、効率のいい回り方を出す） ----------
