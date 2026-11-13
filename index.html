@@ -752,10 +752,12 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       return;
     }
     h += '<div class="empty"><b>バーコードを読むか、書名・セット名を入れてください</b><div class="note">読み取るとすぐ探します。ISBN（10けた）やASINでも探せます。</div></div>';
-    h += '<div class="actions"><button id="shelfListBtn" type="button" class="btn-primary">棚の順に見る（集めているセット）</button></div>';
+    h += '<div class="actions"><button id="shelfListBtn" type="button" class="btn-primary">棚の順に見る（集めているセット）</button><button id="chkBtn" type="button">記入チェック（買った本が記入済みか）</button>' + (API ? '<button id="pullDataBtn" type="button">最新のデータを読み込む（ドライブから）</button>' : "") + "</div>";
     h += histHtml();
     main.innerHTML = h;
     $("shelfListBtn").addEventListener("click", () => { showShelfList(); window.scrollTo(0, 0); });
+    $("chkBtn").addEventListener("click", () => { showChk(); window.scrollTo(0, 0); });
+    const pdb = $("pullDataBtn"); if (pdb) pdb.addEventListener("click", pullData);
     bindHist();
     refocus();
   }
@@ -1346,7 +1348,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     e.preventDefault();
     const v = q.value;
     if (!v.trim()) return;
-    if (curView.type === "arr") addArrival(v); else if (curView.type === "shelf") shelfInput(v); else if (curView.type === "pick") pickInput(v); else if (bookoffTag(v)) onTag(bookoffTag(v)); else if (isTView()) tLookup(v); else search(v);
+    if (curView.type === "chk") chkScan(v); else if (curView.type === "arr") addArrival(v); else if (curView.type === "shelf") shelfInput(v); else if (curView.type === "pick") pickInput(v); else if (bookoffTag(v)) onTag(bookoffTag(v)); else if (isTView()) tLookup(v); else search(v);
     q.value = "";
     q.placeholder = "前回：" + v.trim() + "　／次のバーコードを読む";
     // 画面のキーボードだけ下げる。欄は選んだままなので、バーコードリーダーはそのまま入る
@@ -1399,6 +1401,24 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (/^\d{13}$/.test(d)) autoT = setTimeout(() => { if (q.value.normalize("NFKC").replace(/[\s-]/g, "") === d) $("f").requestSubmit(); }, 150);
   });
 
+  // ドライブにある一番新しい「セットデータ_スマホ用.json」を、Googleの保存場所（Apps Script）から直接もらう
+  //   スマホのファイル選択画面だと、ドライブの古い控えを選んでしまうことがあるため（2026-11-14）
+  async function pullData() {
+    if (!API) { info.textContent = "保存場所につながっていません。"; return; }
+    info.textContent = "ドライブから最新のデータをもらっています…";
+    try {
+      const j = await api({ a: "data" });
+      const obj = JSON.parse(String(j.json || "").replace(/^\uFEFF/, ""));
+      if (!obj || !Array.isArray(obj.sets)) throw new Error("形");
+      const ok = await saveData(obj);
+      useData(obj);
+      if (!ok) info.innerHTML += "　<span class=\"sample\">（このスマホに保存できませんでした）</span>";
+      q.value = "";
+      showHome();
+    } catch (err) {
+      info.innerHTML = '<span class="sample">ドライブから読めませんでした</span>（' + esc(String(err.message || err)) + "）。電波を確かめるか、「データを読み込む」から選んでください。";
+    }
+  }
   $("file").addEventListener("change", (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
@@ -1661,6 +1681,96 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     return h + "</div>";
   }
 
+
+  // ================= 記入チェック：買った本が記入済みかを、バーコードを読んで確かめる（2026-11-14） =================
+  //   本のバーコード → ○記入済み（いつ・いくら）／×まだ。×のあと値札を読むと、その値段で記入する（書く列がなければ「新」の列を足す）
+  let CHK = [];
+  try { CHK = JSON.parse(localStorage.getItem("sc_chk") || "[]") || []; } catch (e) { CHK = []; }
+  const saveChk = () => { try { localStorage.setItem("sc_chk", JSON.stringify(CHK.slice(0, 300))); } catch (e) {} };
+  function chkSay(t) {
+    try { if (window.speechSynthesis) { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; u.rate = 1.4; speechSynthesis.cancel(); speechSynthesis.speak(u); } } catch (e) {}
+  }
+  // この本（JAN）の最近の記入（7日以内）
+  function chkFound(jan, s, vi) {
+    const since = new Date(Date.now() - 7 * 86400000).toISOString();
+    return allEntries().filter((e) => e && e.at >= since && (e.j === jan || (s && e.s === s.s && e.gc === s.col && e.v === vi + 1)))
+      .sort((a, b) => (a.at < b.at ? 1 : -1))[0] || null;
+  }
+  function chkScan(raw) {
+    const tg = bookoffTag(raw);
+    if (tg) {
+      const it = CHK.find((x) => x.st === "todo");
+      if (!it) { tToast("値札 " + yen(tg.p) + "円：先に本のバーコードを読んでください"); return; }
+      chkRecord(it, tg.p);
+      return;
+    }
+    const d = String(raw || "").normalize("NFKC").replace(/[^0-9Xx]/g, "").toUpperCase();
+    const keys = [d]; if (d.length === 10) keys.push(isbn10to13(d));
+    const hits = [];
+    keys.forEach((k) => (codeIdx.get(k) || []).forEach((h) => { if (h[1] >= 0 && !hits.some((x) => x[0] === h[0])) hits.push(h); }));
+    const jan = keys[keys.length - 1];
+    const it = { id: newId(), at: new Date().toISOString(), code: jan };
+    if (!hits.length) { it.st = "none"; it.t = "セットデータにない本"; }
+    else {
+      // 記入があるセットを優先。なければ1つ目のセット
+      let pick = hits[0], e = null;
+      for (const h of hits) { const s0 = DATA.sets[h[0]]; const f = chkFound(jan, s0, h[1]); if (f) { pick = h; e = f; break; } }
+      const st = DATA.sets[pick[0]], v = st.vol[pick[1]] || [];
+      Object.assign(it, { si: pick[0], vi: pick[1], sk: st.s + "|" + st.col, t: st.t || "", vt: v[0] || "", more: hits.length - 1 });
+      if (!e) e = chkFound(jan, st, pick[1]);
+      if (e) Object.assign(it, { st: "done", p: e.p, d: e.d || "" });
+      else it.st = "todo";
+    }
+    CHK = CHK.filter((x) => x.code !== it.code);   // 同じ本を読み直したときは、新しい結果だけ残す
+    CHK.unshift(it); saveChk();
+    try { navigator.vibrate && navigator.vibrate(it.st === "done" ? 60 : [120, 80, 120]); } catch (e) {}
+    chkSay(it.st === "done" ? "記入済み" : it.st === "todo" ? "まだ" : "ない本");
+    showChk();
+  }
+  // 値札の値段で記入する。書く列：そろっていない列でその巻が空いている一番左の列。なければ「新」の列を足す
+  function chkRecord(it, p) {
+    const s = DATA.sets[it.si];
+    if (!s || it.sk !== s.s + "|" + s.col) { tToast("データが変わったので、もう一度本のバーコードを読んでください"); return; }
+    ensureVirt(s);
+    const v = it.vi + 1;
+    let oi = -1;
+    ownStats(s).forEach((x) => { if (oi < 0 && !x.full) { const o = s.own[x.i]; const c = o.x[it.vi]; if ((c == null || c === "") && !entryAt(s, o, v)) oi = x.i; } });
+    if (oi < 0) { for (let i = 0; i < s.own.length; i++) { const o = s.own[i]; if (o.virt && !entryAt(s, o, v)) { oi = i; break; } } }
+    if (oi < 0) { s.own.push(virtCol(s, s.own.filter((o) => o.virt).length + 1)); oi = s.own.length - 1; }
+    const o = s.own[oi], vol = s.vol[it.vi] || [];
+    const data = { id: newId(), at: new Date().toISOString(), d: today(), s: s.s, gc: s.col, a: s.a || "", t: s.t || "", oc: o.c, oi, v, vt: vol[0] || "", j: vol[1] || "", p, kari: false, dc: discR, done: false };
+    notePrice(p);
+    change({ op: "set", id: data.id, data });
+    Object.assign(it, { st: "new", p, d: today(), col: o.c });
+    saveChk();
+    chkSay(yen(p) + "円で記入");
+    showChk();
+  }
+  let showChk = function () {
+    curView = { type: "chk" };
+    const n = { done: 0, todo: 0, new: 0, none: 0 };
+    CHK.forEach((x) => { n[x.st] = (n[x.st] || 0) + 1; });
+    const last = CHK[0];
+    let h = '<div class="callout"><div><b>記入チェック</b>（買った本が記入済みか確かめる）</div>' +
+      '<div class="note">本のバーコードを読むと ○記入済み／×まだ が出ます。×のときは続けて値札を読むと、その値段で記入します（書く列がなければ「新」の列を足します）。値札がない本は、セットを開いて手で入れてください。</div>' +
+      '<div class="actions"><span class="note num">○ ' + n.done + "　記入した " + n.new + "　× " + n.todo + "　ない本 " + n.none + '</span><button type="button" id="chkClear">一覧を空にする</button></div></div>';
+    if (last) {
+      const big = last.st === "done" ? ["○ 記入済み", "good"] : last.st === "new" ? ["○ 記入しました", "good"] : last.st === "todo" ? ["× まだ（値札を読んでください）", "minus"] : ["？ セットデータにない本", "minus"];
+      h += '<div class="callout" style="text-align:center"><div class="' + big[1] + '" style="font-size:26px;font-weight:700">' + big[0] + "</div>" +
+        '<div class="t">' + esc(last.t || "") + (last.vt ? "　" + esc(last.vt) : "") + "</div>" +
+        (last.p != null ? '<div class="num">' + esc(last.d || "") + "　" + yen(last.p) + "円" + (last.col ? "（" + esc(last.col) + "の列）" : "") + "</div>" : "") + "</div>";
+    } else h += '<div class="empty"><b>買った本のバーコードを読んでください</b></div>';
+    const row = (x) => '<div class="hrow"><button class="go" data-ci="' + esc(x.id) + '"><span class="t">' +
+      (x.st === "done" ? "○ " : x.st === "new" ? "◎ " : x.st === "todo" ? "× " : "？ ") + esc(x.t || x.code) + (x.vt ? "　" + esc(x.vt) : "") + '</span><span class="sub num">' +
+      (x.st === "todo" ? "まだ（押すとセットを開く）" : x.st === "none" ? esc(x.code) : esc(x.d || "") + "　" + yen(x.p) + "円" + (x.st === "new" ? "　今記入" : "")) + (x.more ? "　ほかのセットにも " + x.more : "") + "</span></button></div>";
+    const todo = CHK.filter((x) => x.st === "todo");
+    if (todo.length) h += '<section class="hist"><h2><span>まだの本（' + todo.length + "）</span></h2>" + todo.map(row).join("") + "</section>";
+    if (CHK.length) h += '<section class="hist"><h2><span>読んだ順</span></h2>' + CHK.map(row).join("") + "</section>";
+    main.innerHTML = h;
+    $("chkClear").addEventListener("click", () => { if (!CHK.length) return; CHK = []; saveChk(); showChk(); });
+    main.querySelectorAll("[data-ci]").forEach((b) => b.addEventListener("click", () => { const x = CHK.find((y) => y.id === b.dataset.ci); if (x && x.si != null && DATA.sets[x.si]) showSet(x.si, x.vi, false); }));
+    refocus();
+  };
   // ---------- 棚の順：集めているセットを、ブックオフの棚の並び（売り場 → 棚の札 → 出版社・作者）で出す ----------
   //   店の中を端から順に歩いて探せるように（あっちこっち行かなくていいように）
   let showShelfList = function () {
@@ -3057,6 +3167,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   const _shelf = showShelf, _pick = showPick;
   showShelf = function () { const r = _shelf.apply(this, arguments); navRecord(); return r; };
   showPick = function () { const r = _pick.apply(this, arguments); navRecord(); return r; };
+  { const _ck = showChk; showChk = function () { const r = _ck.apply(this, arguments); navRecord(); return r; }; }
   { const _sl = showShelfList; showShelfList = function () { const r = _sl.apply(this, arguments); navRecord(); return r; }; }
   { const _news = showNews; showNews = function () { const r = _news.apply(this, arguments); navRecord(); return r; }; }
   { const _tour = showTour; showTour = function () { const r = _tour.apply(this, arguments); navRecord(); return r; }; }
@@ -3089,6 +3200,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       else if (v.type === "pick") showPick();
       else if (v.type === "news") showNews();
       else if (v.type === "shelfList") showShelfList();
+      else if (v.type === "chk") showChk();
       else if (v.type === "tour") showTour();
       else showHome();
       const y = st.y || 0;
