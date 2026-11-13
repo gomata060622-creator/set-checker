@@ -321,7 +321,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
-    <span class="btns"><label class="btn filebtn" for="file">データを読み込む<input id="file" type="file"></label><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button><button id="tourBtn" class="purchbtn" type="button">店回り</button></span>
+    <span class="btns"><button id="dataBtn" class="btn filebtn" type="button">データを読み込む</button><input id="file" type="file" hidden><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button><button id="tourBtn" class="purchbtn" type="button">店回り</button></span>
   </div>
 </div>
 
@@ -752,12 +752,11 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       return;
     }
     h += '<div class="empty"><b>バーコードを読むか、書名・セット名を入れてください</b><div class="note">読み取るとすぐ探します。ISBN（10けた）やASINでも探せます。</div></div>';
-    h += '<div class="actions"><button id="shelfListBtn" type="button" class="btn-primary">棚の順に見る（集めているセット）</button><button id="chkBtn" type="button">記入チェック（買った本が記入済みか）</button>' + (API ? '<button id="pullDataBtn" type="button">最新のデータを読み込む（ドライブから）</button>' : "") + "</div>";
+    h += '<div class="actions"><button id="shelfListBtn" type="button" class="btn-primary">棚の順に見る（集めているセット）</button><button id="chkBtn" type="button">記入チェック（買った本が記入済みか）</button>' + "</div>";
     h += histHtml();
     main.innerHTML = h;
     $("shelfListBtn").addEventListener("click", () => { showShelfList(); window.scrollTo(0, 0); });
     $("chkBtn").addEventListener("click", () => { showChk(); window.scrollTo(0, 0); });
-    const pdb = $("pullDataBtn"); if (pdb) pdb.addEventListener("click", pullData);
     bindHist();
     refocus();
   }
@@ -1433,10 +1432,23 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       if (!ok) info.innerHTML += "　<span class=\"sample\">（このスマホに保存できませんでした）</span>";
       q.value = "";
       showHome();
+      return true;
     } catch (err) {
-      info.innerHTML = '<span class="sample">ドライブから読めませんでした</span>（' + esc(String(err.message || err)) + "）。電波を確かめるか、「データを読み込む」から選んでください。";
+      info.innerHTML = '<span class="sample">ドライブから読めませんでした</span>（' + esc(String(err.message || err)) + "）。もう一度「データを読み込む」を押すと、ファイルを選べます。";
+      return false;
     }
   }
+  // 「データを読み込む」：保存場所につながっていればドライブの最新を直接もらう。だめならファイルを選ぶ画面（2026-11-14）
+  let pullFailed = false;
+  $("dataBtn").addEventListener("click", async () => {
+    if (API && !pullFailed) {
+      if (await pullData()) return;
+      pullFailed = true;   // つながらなかったときは、もう一度押すとファイルを選ぶ画面
+      return;
+    }
+    pullFailed = false;
+    $("file").click();
+  });
   $("file").addEventListener("change", (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
