@@ -1036,9 +1036,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       '<div class="sv num">' + circled(oi) + "の列（" + esc(o.c) + "列）　" + v + "巻" + (vol && vol[0] ? "　" + esc(vol[0]) : "") + (ent ? "　記入：" + esc(ent.d) + (ent.kari ? "（金額は仮 " + yen(ent.p) + "円）" : ent.done ? "（反映済み）" : "") : "") + (discR > 0 && !(ent && !ent.kari) ? '　<span class="dctag" style="font-size:12px">割引' + pctTxt(discR) + "</span>" : "") + "</div>" +
       '<div class="quick" aria-label="押すとその値段で保存（値札の値段）">' +
         (ent && !ent.kari ? "" : '<button type="button" id="edKari" class="karibtn num" aria-label="金額はあとで入れる（仮の金額で登録）">仮 ' + yen(kariP) + "</button>") +
-        quickPrices().map((p) => '<button type="button" class="num" data-qp="' + p + '">' + yen(p) + "</button>").join("") + '</div>' +
+        quickPrices().map((p) => '<button type="button" class="num" data-qp="' + p + '">' + yen(p) + "</button>").join("") + '<button type="button" class="num" data-qp="0" aria-label="0円（上下2冊で1つの値段の本の下巻など）">0</button></div>' +
       '<form id="edForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="値段" value="' + (ent && !ent.kari ? ent.p : "") + '" aria-label="買った値段"><span>円</span>' +
-      '<button type="button" class="num" data-qp="0" aria-label="0円（上下2冊で1つの値段の本の下巻など）">0</button><button type="submit" class="btn-primary">保存</button>' + (ent ? '<button type="button" id="edDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
+      '<button type="submit" class="btn-primary">保存</button>' + (ent ? '<button type="button" id="edDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
       '<div id="edErr" class="err" hidden></div>';
     sheet.hidden = false;
     const inp = $("price");
