@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><title>グーニーズ</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#cdb9ea"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport id="vpMeta" content="width=device-width,initial-scale=1,minimum-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px);overflow-x:clip}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><title>グーニーズ</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#cdb9ea"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"></head><body>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
 <style>
@@ -553,10 +553,28 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
 
 
+  // スマホで足した列（「新1」「新2」…）。Excelの「まとめて実行」が、そのブロックの右に入力する列を作って書き込む
+  //   まだExcelに入っていない記入（と、書き出したデータより後の記入）があれば、データを読み直しても列を出す
+  function virtCol(s, k) {
+    return { a: s.a || "", c: "新" + k, p: null, n: null, f7: null, f9: null, dc: null, nd: "", x: s.vol.map(() => null), virt: true };
+  }
+  function ensureVirt(s) {
+    const m = String(DATA.made || "").match(/(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/);
+    const made = m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).toISOString() : "";
+    let mx = s.own.filter((o) => o.virt).length;
+    allEntries().forEach((e) => {
+      if (!e || e.s !== s.s || e.gc !== s.col) return;
+      const mk = /^新(\d+)$/.exec(String(e.oc || ""));
+      if (!mk || (e.done && made && e.at < made)) return;
+      mx = Math.max(mx, +mk[1]);
+    });
+    for (let k = s.own.filter((o) => o.virt).length + 1; k <= mx; k++) s.own.push(virtCol(s, k));
+  }
   function showSet(si, vi, fromScan, keepScroll) {
     curView = { type: "set", si, vi, fromScan };
     const scrollY = edPos ? edPos.y : window.scrollY;
     const s = DATA.sets[si];
+    ensureVirt(s);
     if (!keepScroll) recordView(s);
     const st = ownStats(s);
     const cols = st.filter((x) => !x.full);
@@ -654,8 +672,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
 
     // 表
     h += '<div class="hbar" id="hbar" hidden><span>←</span><input id="hrange" type="range" min="0" max="1000" value="0" aria-label="表を横に動かす"><span>→</span><span class="hl" id="hlab"></span></div>';
+    h += '<div class="actions"><button id="addCol" type="button">＋列を足す</button><span class="note">' + (s.own.some((o) => o.virt) ? "「新」の列はスマホで足した列。まとめて実行で、Excelのこのブロックに新しい列ができて書き込まれます" : "書き込む列がないとき（初めて集める・全部そろっている）に足す") + "</span></div>";
     h += '<div class="tablebox" id="tbox"><table class="num"><thead><tr><th class="fx1">巻</th><th class="fx2" style="text-align:left">書名</th><th>最新</th><th>参考</th><th>目安' + (aimCol != null ? "<br>" + circled(aimCol) : "") + '</th>';
-    cols.forEach((x) => { h += '<th class="own">' + circled(x.i) + "</th>"; });
+    cols.forEach((x) => { h += '<th class="own">' + circled(x.i) + (s.own[x.i].virt ? "<br>新" : "") + "</th>"; });
     past.forEach((x, k) => { h += '<th' + (k === 0 ? ' class="own"' : "") + ">" + x.h + "</th>"; });
     h += "</tr></thead><tbody>";
     s.vol.forEach((v, i) => {
@@ -686,6 +705,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (back) back.addEventListener("click", () => showList(lastList.intro));
     setupHbar(keepScroll);
     main.querySelectorAll("td.own.tap").forEach((td) => td.addEventListener("click", () => openEditor(si, +td.dataset.oi, +td.dataset.v)));
+    const ac = $("addCol");
+    if (ac) ac.addEventListener("click", () => { s.own.push(virtCol(s, s.own.filter((o) => o.virt).length + 1)); edPos = null; showSet(si, vi, false, true); });
     const hr = $("hitrow");
     if (keepScroll) window.scrollTo(0, scrollY);
     else if (hr && !$("verdict")) hr.scrollIntoView({ block: "center" }); else window.scrollTo(0, 0);
@@ -1017,7 +1038,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         (ent && !ent.kari ? "" : '<button type="button" id="edKari" class="karibtn num" aria-label="金額はあとで入れる（仮の金額で登録）">仮 ' + yen(kariP) + "</button>") +
         quickPrices().map((p) => '<button type="button" class="num" data-qp="' + p + '">' + yen(p) + "</button>").join("") + '</div>' +
       '<form id="edForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="値段" value="' + (ent && !ent.kari ? ent.p : "") + '" aria-label="買った値段"><span>円</span>' +
-      '<button type="submit" class="btn-primary">保存</button>' + (ent ? '<button type="button" id="edDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
+      '<button type="button" class="num" data-qp="0" aria-label="0円（上下2冊で1つの値段の本の下巻など）">0</button><button type="submit" class="btn-primary">保存</button>' + (ent ? '<button type="button" id="edDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
       '<div id="edErr" class="err" hidden></div>';
     sheet.hidden = false;
     const inp = $("price");
@@ -1038,7 +1059,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     $("edForm").addEventListener("submit", (e) => {
       e.preventDefault();
       const p = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10);
-      if (!(p > 0)) { const er = $("edErr"); er.textContent = "値段を数字で入れてください（例：380）"; er.hidden = false; return; }
+      if (!(p >= 0)) { const er = $("edErr"); er.textContent = "値段を数字で入れてください（例：380。上下2冊で1つの値段の本の下巻は0）"; er.hidden = false; return; }
       if (!ent || ent.kari || ent.p !== p) notePrice(p);
       const data = {
         id: ent ? ent.id : newId(), at: ent ? ent.at : new Date().toISOString(), d: ent ? ent.d : today(),
@@ -1211,6 +1232,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const si = setIdx.get(e.s + "|" + e.gc);
       if (si == null) return;
       const s = DATA.sets[si];
+      ensureVirt(s);
       const oi = s.own.findIndex((o) => o.c === e.oc);
       if (oi < 0) return;
       openEditor(si, oi, e.v);   // 押したら、その巻の値段を入れ直す画面を開く（Excelに書いたあとでも直せる）
@@ -1827,7 +1849,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       (r.tag ? '<div class="tagline num">値札 ' + yen(r.tag) + "円 → 中古で売れたら利益 <b class=\"" + (r.usedP && profitOf(r, r.usedP) - r.tag < 0 ? "minus" : "") + "\">" + (r.usedP ? yen(profitOf(r, r.usedP) - r.tag) + "円" : "-") + "</b></div>" : "") +
       '<div class="trow-foot"><span class="note num">検索日: ' + esc(fmtDT(r.at)) + "</span>" +
         (curView.type === "tan" ? (tPick ? '<label class="tpick"><input type="checkbox" data-pick="' + esc(r.id) + '"' + (tPicked.has(r.id) ? " checked" : "") + "> 選ぶ</label>" :
-          (r.arrId ? '<span class="pill done">到着に入れた</span>' : '<button type="button" class="tarr" data-arr="' + esc(r.id) + '">到着</button>')) : "") +
+          ((r.arrId ? '<span class="pill done">到着に入れた</span>' : "") + '<button type="button" class="tarr" data-buy="' + esc(r.id) + '">仕入れ</button>')) : "") +
       "</div></div></div>";
   }
   const fmtDT = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
@@ -1867,9 +1889,10 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     bindTanRows();
   }
   function bindTanRows() {
+    // 「仕入れ」ボタン：仕入れ値を入れる画面を開く（家で届いた本は、上の「到着」か「まとめて到着」で）
     main.querySelectorAll(".tarr").forEach((b) => {
       b.addEventListener("pointerdown", (e) => e.stopPropagation());
-      b.addEventListener("click", (e) => { e.stopPropagation(); const r = TLIST.find((x) => x.id === b.dataset.arr); if (toArrival(r)) { tToast("到着に入れました：" + (r.t || "").slice(0, 16)); showTan(); } });
+      b.addEventListener("click", (e) => { e.stopPropagation(); const r = TLIST.find((x) => x.id === b.dataset.buy); if (r && !r.err && !r.wait) openTBuy(r); });
     });
     main.querySelectorAll("[data-pick]").forEach((cb) => {
       cb.parentElement.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -1921,7 +1944,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (/^\d{8}$|^\d{12,13}$/.test(s)) return { p: "code=" + s, code: s };
     return null;
   }
-  async function tLookup(raw) {
+  async function tLookup(raw, tagP) {
     const c = tCode(raw);
     const r0 = { id: "w" + Date.now().toString(36), code: String(raw).trim(), at: new Date().toISOString(), wait: true };
     if (!c) {
@@ -1944,17 +1967,25 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       if (e instanceof TypeError) r.err = navigator.onLine ? "Keepaにつながりませんでした" : "電波がないため調べられませんでした";
     }
     tBusy--;
-    if (!r.err) takePendTag(r);
+    if (!r.err) { if (tagP > 0) r.tag = tagP; else takePendTag(r); }
     // C：コンディション別の中古の値段がなく、粗利益が最低利益額以上に見える本だけ、出品一覧を取って「良い以上・送料込み」を出す
-    if (!r.err && r.usedL === "中古" && r.usedP && profitOf(r, r.usedP) >= TSET.min) {
-      try { r.offers = await offersOf(r.asin); r.offAt = new Date().toISOString(); usedFromOffers(r); } catch (e) { r.usedL = "中古（送料別・良い以上か不明）"; }
-    } else if (!r.err && r.usedL === "中古") r.usedL = "中古（送料別・良い以上か不明）";
-    const i = TLIST.findIndex((x) => x.id === r0.id);
-    if (i >= 0) TLIST[i] = r; else TLIST.unshift(r);
+    //   出品一覧は時間がかかるので、先に1回目の結果を出してから取りに行き、あとで書き足す（読み上げは書き足したあと）
+    const needOff = !r.err && r.usedL === "中古" && r.usedP && profitOf(r, r.usedP) >= TSET.min;
+    if (!r.err && r.usedL === "中古" && !needOff) r.usedL = "中古（送料別・良い以上か不明）";
+    if (needOff) r.usedL = "中古（良い以上を調べています…）";
+    const put = (again) => {
+      const i = TLIST.findIndex((x) => x === r || x.id === r0.id);
+      if (i >= 0) TLIST[i] = r; else if (again) return; else TLIST.unshift(r);   // 調べている間に一覧から消したときは戻さない
+      saveTlist();
+      if (curView.type === "tan") showTan();
+    };
+    put();
+    if (needOff) {
+      try { r.offers = await offersOf(r.asin); r.offAt = new Date().toISOString(); r.usedL = "中古"; usedFromOffers(r); } catch (e) { r.usedL = "中古（送料別・良い以上か不明）"; }
+      put(true);
+    }
     if (!r.err) { const f = allF().find((x) => x.a === r.asin); if (f) change({ op: "set", id: f.id, data: Object.assign({}, f, { snap: Object.assign({}, r), t: r.t }) }); }   // お気に入りの中身も今の値段に
-    saveTlist();
-    if (curView.type === "tan") showTan();
-    if (!r.err) tSignal(r);
+    if (!r.err) { if (r.tag) tSpeakTag(r); else tSignal(r); }
   }
   // 読み上げ（中古の粗利益）とプレ値のときの震え
   function tSignal(r) {
@@ -1998,15 +2029,56 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     return p > 0 && p < 1000000 ? { code: t, p } : null;
   }
   let pendTag = null;   // 本より先に値札を読んだとき、次の本に付ける
-  function onTag(tg) {
+  // 値札の番号（はじめの10けた）で、ブックオフオンラインの商品ページからJAN（なければ書名）を取る
+  //   例：0012150217 → https://shopping.bookoff.co.jp/used/0012150217 → JAN 9784393710128
+  //   ブックオフのページはほかのページから読める（2026-11-13に確かめた）。電波がない・ページがないときは null
+  const boCache = new Map();
+  async function boLookup(code) {
+    if (boCache.has(code)) return boCache.get(code);
+    let res = null;
+    try {
+      const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 8000);
+      const r = await fetch("https://shopping.bookoff.co.jp/used/" + code, { signal: ctl.signal });
+      clearTimeout(tm);
+      if (r.ok) {
+        const h = await r.text();
+        const m = h.match(/<th>\s*JAN\s*<\/th>\s*<td>\s*(\d{8,13})\s*<\/td>/) || h.match(/"gtin13"\s*:\s*"(\d{13})"/);
+        const t = (h.match(/<meta property="og:title" content="([^"]*)"/) || [])[1] || "";
+        const title = t.replace(/\s*(中古本・書籍|中古コミック・漫画|中古[^|｜]*)?\s*[|｜]\s*ブックオフ公式オンラインストア\s*$/, "").replace(/&amp;/g, "&").trim();
+        if (m || title) res = { jan: m ? m[1] : "", title };
+      }
+    } catch (e) {}
+    if (res) boCache.set(code, res);
+    return res;
+  }
+  async function onTag(tg) {
     // 値段を入れる画面が開いていれば、そこに入れる（セット本の画面でも）
     const pi = $("price");
     if (pi && !sheet.hidden) { pi.value = String(tg.p); pi.dispatchEvent(new Event("input")); tToast("値札 " + yen(tg.p) + "円を入れました"); return; }
-    if (!isTView()) { tToast("ブックオフの値札：" + yen(tg.p) + "円"); return; }
+    const code = tg.code.slice(0, 10);
+    tToast("値札 " + yen(tg.p) + "円：ブックオフで本を調べています…");
+    const bo = await boLookup(code);
+    if (!isTView()) {
+      // セット本の画面：値札の本のJANでセットを探す
+      if (bo && bo.jan) { tToast("値札 " + yen(tg.p) + "円"); search(bo.jan); }
+      else tToast("ブックオフの値札：" + yen(tg.p) + "円（本が分かりませんでした）");
+      return;
+    }
     const r = TLIST[0];
     const fresh = r && !r.err && !r.wait && Date.now() - new Date(r.at).getTime() < 3 * 60000 && !r.tag;
-    if (fresh) { r.tag = tg.p; saveTlist(); if (curView.type === "tan") showTan(); tToast("値札 " + yen(tg.p) + "円 → " + (r.t || "").slice(0, 16)); tSpeakTag(r); }
-    else { pendTag = { p: tg.p, at: Date.now() }; tToast("値札 " + yen(tg.p) + "円（次に読んだ本に付けます）"); }
+    if (bo && bo.jan) {
+      const j13 = (x) => { const d = String(x || "").replace(/[^0-9X]/gi, ""); return d.length === 10 ? isbn10to13(d) : d; };
+      if (fresh && (j13(r.jan) === j13(bo.jan) || j13(r.code) === j13(bo.jan))) {
+        // 直前に読んだ本と同じ本：その本に値札の値段を付ける
+        r.tag = tg.p; saveTlist(); if (curView.type === "tan") showTan(); tToast("値札 " + yen(tg.p) + "円 → " + (r.t || "").slice(0, 16)); tSpeakTag(r); return;
+      }
+      tLookup(bo.jan, tg.p);   // 別の本：値札の本を調べて、値段を付ける
+      return;
+    }
+    if (bo && bo.title) { pendTag = { p: tg.p, at: Date.now() }; tToast("値札 " + yen(tg.p) + "円：JANがない本なので書名で探します"); tWordSearch(bo.title); return; }
+    // ブックオフで調べられなかった（電波がない・オンラインストアにない本）
+    if (fresh) { r.tag = tg.p; saveTlist(); if (curView.type === "tan") showTan(); tToast("値札の本を確かめられなかったので、直前の本に付けました：" + (r.t || "").slice(0, 14)); tSpeakTag(r); }
+    else { pendTag = { p: tg.p, at: Date.now() }; tToast("値札 " + yen(tg.p) + "円（本が分からないので、次に読んだ本に付けます）"); }
   }
   function takePendTag(r) {
     if (pendTag && Date.now() - pendTag.at < 3 * 60000 && !r.tag) { r.tag = pendTag.p; pendTag = null; }
@@ -2349,7 +2421,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (!isBook && !bookoffTag(c)) { camMsg("読んだ：" + c + "（本のバーコードではありません）"); return; }
     try { navigator.vibrate && navigator.vibrate(60); } catch (e) {}
     camMsg("読んだ：" + c);
-    closeEditor();
+    if (!bookoffTag(c)) closeEditor();
     q.value = c;
     $("f").requestSubmit();
   }
@@ -2939,6 +3011,29 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   });
 })();
 </script>
-
+<script>
+// 指2本で拡大したあと、ダブルタップで元の大きさに戻す（ボタン・値段のマスなど押すところは除く）
+(function () {
+  const vp = document.getElementById("vpMeta"), base = vp ? vp.content : "";
+  let last = 0, lx = 0, ly = 0;
+  const zoomed = () => { const v = window.visualViewport; return v ? Math.abs(v.scale - 1) > 0.02 : false; };
+  function reset() {
+    if (!vp) return;
+    vp.content = base + ",maximum-scale=1";   // いったん最大1倍にすると、ブラウザが元の大きさに戻す
+    setTimeout(() => { vp.content = base; }, 350);
+  }
+  document.addEventListener("touchend", (e) => {
+    if (e.touches.length || e.changedTouches.length !== 1) { last = 0; return; }
+    const t = e.changedTouches[0], now = Date.now();
+    const busy = e.target.closest && e.target.closest("button,a,input,select,textarea,label,td.tap,.trow,.item");
+    if (!busy && now - last < 350 && Math.abs(t.clientX - lx) < 40 && Math.abs(t.clientY - ly) < 40) {
+      last = 0;
+      if (zoomed()) { e.preventDefault(); reset(); }
+      return;
+    }
+    last = now; lx = t.clientX; ly = t.clientY;
+  }, { passive: false });
+})();
+</script>
 
 </body></html>
