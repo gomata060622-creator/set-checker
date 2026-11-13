@@ -752,8 +752,10 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       return;
     }
     h += '<div class="empty"><b>バーコードを読むか、書名・セット名を入れてください</b><div class="note">読み取るとすぐ探します。ISBN（10けた）やASINでも探せます。</div></div>';
+    h += '<div class="actions"><button id="shelfListBtn" type="button" class="btn-primary">棚の順に見る（集めているセット）</button></div>';
     h += histHtml();
     main.innerHTML = h;
+    $("shelfListBtn").addEventListener("click", () => { showShelfList(); window.scrollTo(0, 0); });
     bindHist();
     refocus();
   }
@@ -1506,7 +1508,46 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const small = { "ぁ": "あ", "ぃ": "い", "ぅ": "う", "ぇ": "え", "ぉ": "お", "っ": "つ", "ゃ": "や", "ゅ": "ゆ", "ょ": "よ", "ゎ": "わ" };
     return (small[h] || h).normalize("NFD")[0];   // 濁点を外す（が→か）
   };
+  // ---------- ブックオフの分類（data/bocat.enc：セットの1巻のJAN → ブックオフオンラインの分類・作者・出版社） ----------
+  //   分類の番号は店の棚の札・値札の番号と同じ（例 1225-01-01 文庫の日本の小説 あ行の著者）。2026-11-13に全セットを調べた
+  let BOC = null;
+  async function loadBocat() {
+    try { const c = localStorage.getItem("sc_boc"); if (c) BOC = JSON.parse(c); } catch (e) {}
+    try {
+      const x = await loadEnc("data/bocat.enc");
+      if (x) { BOC = x; try { localStorage.setItem("sc_boc", JSON.stringify(BOC)); } catch (e) {} }
+    } catch (e) {}
+    if (curView.type === "shelfList") showShelfList(); else if (curView.type === "news") showNews();
+  }
+  function bocOf(st) {
+    if (!BOC || !st || !st.vol) return null;
+    for (let i = 0; i < Math.min(st.vol.length, 3); i++) { const j = st.vol[i] && st.vol[i][1]; if (j && BOC[j]) return BOC[j]; }
+    return null;
+  }
+  const pubKey = (pb) => String(pb || "").split("/")[0].replace(/^株式会社|株式会社$/g, "").trim();
+  // ブックオフの分類から棚を出す。コミックは売り場 → 出版社 → 作者（少女・文庫コミック・ワイドはタイトル順）。本は分類の番号順 → 作者 → 書名
+  function shelfFromBoc(b, title) {
+    const codes = String(b[0]).split(">"), names = String(b[1]).split(">"), au = b[2] || "", pb = pubKey(b[3]);
+    if (codes[0] === "11") {
+      let i = 1;
+      if (names[1] === "大人コミック" && names[2]) i = 2;   // 大人コミック → 青年コミック・文庫コミックなど
+      const corner = names[i] || "コミック", cc = codes[i] || codes[1] || "11";
+      const byTitle = /少女|文庫コミック|ワイド|完全版|愛蔵版/.test(corner);
+      const sub = byTitle ? "タイトル順" : pb;
+      // 少年コミックは店と同じく 集英社 → 講談社 → 小学館 → その他 の順（ブックオフの分類の番号）、その中を出版社 → 作者
+      const pc = !byTitle && i === 1 && codes[2] ? codes[2] : cc;
+      const key = pc.padEnd(10, "0") + "|" + (byTitle ? "" : sub + "|" + au) + "|" + title;
+      return { corner, sub, key, label: corner + (sub ? "・" + sub : ""), src: "ブックオフ", au };
+    }
+    // 本：上から2つ目（文庫の小説・教養など）を売り場、その下を棚の札にする
+    const corner = names[1] || names[0] || "その他";
+    const sub = names.slice(2).join(" > ");
+    const key = String(codes[codes.length - 1]).padEnd(10, "0") + "|" + au + "|" + title;
+    return { corner, sub, key, label: corner + (sub ? " > " + sub : ""), src: "ブックオフ", au };
+  }
   function shelfOf(t, st) {
+    const bc = bocOf(st);
+    if (bc) return shelfFromBoc(bc, String(t || (st && st.t) || ""));
     const k = st ? khOf(st) : null;
     const pl = k && k.place ? String(k.place) : "";
     let corner = "", sub = "", src = "";
@@ -1540,7 +1581,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       else { const p = PUBS.find((x) => title.includes(x)); if (p) sub = p; }
     }
     const ci = CORNERS.indexOf(corner), pi = PUBS.indexOf(sub);
-    const key = String(ci < 0 ? (corner.startsWith("コミック") ? 35 : 125) : ci * 10).padStart(4, "0") + "|" + (pi >= 0 ? String(pi).padStart(3, "0") : sub ? "500" + sub : "999") + "|" + title;
+    const key = "z" + String(ci < 0 ? (corner.startsWith("コミック") ? 35 : 125) : ci * 10).padStart(4, "0") + "|" + (pi >= 0 ? String(pi).padStart(3, "0") : sub ? "500" + sub : "999") + "|" + title;
     const label = corner + (sub ? (sub.length === 1 ? "「" + sub + "」" : "・" + sub) : "");
     return { corner, sub, key, label, src };
   }
@@ -1595,6 +1636,43 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     return h + "</div>";
   }
 
+  // ---------- 棚の順：集めているセットを、ブックオフの棚の並び（売り場 → 棚の札 → 出版社・作者）で出す ----------
+  //   店の中を端から順に歩いて探せるように（あっちこっち行かなくていいように）
+  let showShelfList = function () {
+    curView = { type: "shelfList" };
+    if (!DATA || DATA.sample) return showHome();
+    const all = localStorage.getItem("sc_shelf_all") === "1";
+    const rows = [];
+    DATA.sets.forEach((st, si) => {
+      const part = ownStats(st).filter((x) => !x.full);
+      if (!part.length) return;
+      const c = colCalc(st, part[0].i);
+      if (c.done) return;
+      if (!all && !(c.lim != null && c.lim >= 100)) return;   // 1冊100円以上で買える（利益1,000円が残る）セットだけ
+      rows.push({ si, st, c, sh: shelfOf(st.t, st) });
+    });
+    rows.sort((x, y) => x.sh.key.localeCompare(y.sh.key, "ja"));
+    let h = '<div class="callout"><div><b>棚の順</b>（集めているセットを、ブックオフの棚の並びで）</div><div class="note">店の端から順に見ていけます。売り場ごとに分け、コミックは出版社 → 作者（少女・文庫コミック・ワイドはタイトル）、本は棚の札 → 作者の順。「推測」はブックオフで分類が取れなかったセット（最後にまとめて出ます）。</div>' +
+      '<div class="actions"><button type="button" data-sa="0"' + (all ? "" : ' class="on"') + '>1冊100円以上で買えるセット</button><button type="button" data-sa="1"' + (all ? ' class="on"' : "") + ">集めている全部</button>" +
+      '<span class="note">' + rows.length + "セット</span></div></div>";
+    let lastC = null, lastS = null;
+    const heads = [];
+    rows.forEach((r) => {
+      const cn = r.sh.src ? r.sh.corner : "推測：" + r.sh.corner;
+      if (cn !== lastC) { lastC = cn; lastS = null; heads.push(cn); h += '<div class="shelfhead" id="sh' + (heads.length - 1) + '">' + esc(cn) + "</div>"; }
+      if (r.sh.sub && r.sh.sub !== lastS && r.sh.src) { lastS = r.sh.sub; h += '<div class="note" style="padding:6px 4px 2px;font-weight:700">' + esc(r.sh.sub) + "</div>"; }
+      const miss = r.c.miss.length;
+      h += '<button type="button" class="item" data-si="' + r.si + '"><div class="t">' + esc(r.st.t || "（セット名なし）") + "</div>" +
+        '<div class="sub num">' + (r.sh.au ? "<span>" + esc(r.sh.au) + "</span>" : "") + "<span>足りない " + miss + "冊" + (miss <= 6 ? "（" + r.c.miss.join("・") + "）" : "") + "</span>" +
+        (r.c.lim != null ? '<span class="' + (r.c.lim < 0 ? "minus" : "") + '">1冊 ' + yen(r.c.lim) + "円まで</span>" : "") + "</div></button>";
+    });
+    if (!rows.length) h += '<div class="empty"><b>集めているセットがありません</b></div>';
+    // 売り場へ飛ぶ目次（上に出す）
+    const toc = heads.length > 1 ? '<div class="chips">' + heads.map((x, i) => '<a class="chip" href="#sh' + i + '">' + esc(x) + "</a>").join("") + "</div>" : "";
+    main.innerHTML = h.replace("</div></div>", "</div>" + toc + "</div>");
+    main.querySelectorAll("[data-sa]").forEach((b) => b.addEventListener("click", () => { localStorage.setItem("sc_shelf_all", b.dataset.sa); showShelfList(); }));
+    main.querySelectorAll(".item[data-si]").forEach((b) => b.addEventListener("click", () => { showSet(+b.dataset.si, -1, false); }));
+  };
   // ---------- ニュース：Kronosの最近の情報を新しい順に（押すとそのセットを探す） ----------
   // そろえるときの1巻平均の上限＝セットデータの「平均仕入価格」（販売価格 − 手数料2つ − 利益1,000円）÷ 巻数
   function avgLimit(st) {
@@ -2943,6 +3021,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   const _shelf = showShelf, _pick = showPick;
   showShelf = function () { const r = _shelf.apply(this, arguments); navRecord(); return r; };
   showPick = function () { const r = _pick.apply(this, arguments); navRecord(); return r; };
+  { const _sl = showShelfList; showShelfList = function () { const r = _sl.apply(this, arguments); navRecord(); return r; }; }
   { const _news = showNews; showNews = function () { const r = _news.apply(this, arguments); navRecord(); return r; }; }
   { const _tour = showTour; showTour = function () { const r = _tour.apply(this, arguments); navRecord(); return r; }; }
   showTSrch = function () { const r = _tsrch.apply(this, arguments); navRecord(); return r; };
@@ -2973,6 +3052,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       else if (v.type === "shelf") showShelf();
       else if (v.type === "pick") showPick();
       else if (v.type === "news") showNews();
+      else if (v.type === "shelfList") showShelfList();
       else if (v.type === "tour") showTour();
       else showHome();
       const y = st.y || 0;
@@ -2984,6 +3064,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   // 起動：このスマホに保存したデータ → なければ見本
   updatePurchBtn();
   loadKoheya();
+  loadBocat();
   loadKronos();
   loadAuthor();
   useData(SAMPLE);
