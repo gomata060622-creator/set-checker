@@ -712,7 +712,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       if (bulk && bulk.si === si) bulkTap(td); else openEditor(si, +td.dataset.oi, +td.dataset.v);
     }));
     const bb = $("bulkBtn");
-    if (bb) bb.addEventListener("click", () => { if (bulk && bulk.si === si) { bulk = null; closeEditor(); } else { closeEditor(); bulk = { si, oi: -1, sel: [] }; } showSet(si, vi, false, true); });
+    if (bb) bb.addEventListener("click", () => { if (bulk && bulk.si === si) { bulk = null; closeEditor(); } else { closeEditor(); bulk = { si, sel: [] }; } showSet(si, vi, false, true); });
     if (bulk && bulk.si === si) bulkMark();
     const ac = $("addCol");
     if (ac) ac.addEventListener("click", () => { s.own.push(virtCol(s, s.own.filter((o) => o.virt).length + 1)); edPos = null; showSet(si, vi, false, true); });
@@ -1061,38 +1061,47 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     return [...new Set(base.concat(ex.filter((x) => x > 0), shared))].filter((x) => !hide.includes(x)).sort((a, b) => a - b);   // 手で入れた値段も足して安い順（消したボタンは出さない）
   }
 
-  // ---------- まとめて入れる：1つの列で、空いているマスをいくつか選んで、同じ値段を入れる（2026-11-14） ----------
-  //   1マス目を押してから最後のマスを押すと、その間の空いているマスが全部選ばれる。選んだマスをもう一度押すと外れる。値段が入っているマスは選べない
-  let bulk = null;   // { si, oi, sel: [巻番号…] }
+  // ---------- まとめて入れる：空いているマスをいくつか選んで、同じ値段を入れる（2026-11-14） ----------
+  //   1マス目を押してから同じ列の別のマスを押すと、その間の空いているマスが全部選ばれる。選んだマスをもう一度押すと外れる。値段が入っているマスは選べない
+  //   ちがう列のマスも一緒に選べる（3セット目・4セット目の同じ巻をまとめて入れる。2026-11-14）。列ごとに「その列で選んだマスが1つだけ」のとき、2つ目を押すと間が全部選ばれる
+  let bulk = null;   // { si, sel: [{ oi, v }…] }
+  function bulkKeyIdx(oi, v) { return bulk.sel.findIndex((x) => x.oi === oi && x.v === v); }
+  function bulkSort() { bulk.sel.sort((a, b) => a.oi - b.oi || a.v - b.v); }
   function bulkMark() {
     main.querySelectorAll("td.own.bsel").forEach((t) => t.classList.remove("bsel"));
     if (!bulk) return;
-    bulk.sel.forEach((v) => { const td = main.querySelector('td.own[data-oi="' + bulk.oi + '"][data-v="' + v + '"]'); if (td) td.classList.add("bsel"); });
+    bulk.sel.forEach((x) => { const td = main.querySelector('td.own[data-oi="' + x.oi + '"][data-v="' + x.v + '"]'); if (td) td.classList.add("bsel"); });
     bulkSheet();
   }
   function bulkTap(td) {
     if (!td.classList.contains("miss")) { tToast("値段が入っているマスは選べません（直すときは「まとめて入れる」をやめてから押す）"); return; }
     const oi = +td.dataset.oi, v = +td.dataset.v;
-    if (bulk.oi !== oi) { bulk.oi = oi; bulk.sel = []; }
-    const k = bulk.sel.indexOf(v);
+    const k = bulkKeyIdx(oi, v);
+    const inCol = bulk.sel.filter((x) => x.oi === oi);
     if (k >= 0) bulk.sel.splice(k, 1);
-    else if (bulk.sel.length === 1) {
-      // 2つ目：1つ目との間の空いているマスを全部
-      const a = Math.min(bulk.sel[0], v), b = Math.max(bulk.sel[0], v);
+    else if (inCol.length === 1) {
+      // その列の2つ目：1つ目との間の空いているマスを全部
+      const a = Math.min(inCol[0].v, v), b = Math.max(inCol[0].v, v);
       for (let x = a; x <= b; x++) {
         const c = main.querySelector('td.own.miss[data-oi="' + oi + '"][data-v="' + x + '"]');
-        if (c && !bulk.sel.includes(x)) bulk.sel.push(x);
+        if (c && bulkKeyIdx(oi, x) < 0) bulk.sel.push({ oi, v: x });
       }
-    } else bulk.sel.push(v);
-    bulk.sel.sort((a, b) => a - b);
+    } else bulk.sel.push({ oi, v });
+    bulkSort();
     bulkMark();
+  }
+  function bulkDesc() {
+    const s = DATA.sets[bulk.si], cols = [...new Set(bulk.sel.map((x) => x.oi))];
+    return cols.map((oi) => {
+      const vs = bulk.sel.filter((x) => x.oi === oi).map((x) => x.v), o = s.own[oi] || {};
+      const rng = vs.length > 3 ? vs[0] + "〜" + vs[vs.length - 1] + "巻のうち" + vs.length + "冊" : vs.join("・") + "巻";
+      return circled(oi) + "の列（" + esc(o.c || "") + "列）" + rng;
+    }).join("<br>");
   }
   function bulkSheet() {
     if (!bulk || !bulk.sel.length) { sheet.hidden = true; sheet.innerHTML = ""; return; }
-    const s = DATA.sets[bulk.si], o = s.own[bulk.oi];
-    const rng = bulk.sel.length > 3 ? bulk.sel[0] + "〜" + bulk.sel[bulk.sel.length - 1] + "巻のうち" : bulk.sel.join("・") + "巻";
     sheet.innerHTML = '<div class="st">まとめて入れる</div>' +
-      '<div class="sv num">' + circled(bulk.oi) + "の列（" + esc(o.c) + "列）　" + rng + "　" + bulk.sel.length + "冊</div>" +
+      '<div class="sv num">' + bulkDesc() + "<br>合わせて " + bulk.sel.length + "冊</div>" +
       '<div class="quick">' + quickPrices().map((p) => '<button type="button" class="num" data-bq="' + p + '">' + yen(p) + "</button>").join("") + '<button type="button" class="num" data-bq="0">0</button></div>' +
       '<form id="bkForm" class="row"><input id="bkPrice" type="text" inputmode="numeric" autocomplete="off" placeholder="1冊の値段" value="' + (localStorage.getItem("sc_lastp") || "") + '"><span>円</span>' +
       '<button type="submit" class="btn-primary">' + bulk.sel.length + '冊に入れる</button><button type="button" id="bkClear">選び直す</button></form><div id="bkErr" class="err" hidden></div>';
@@ -1105,14 +1114,15 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       e.preventDefault();
       const p = parseInt(String(inp.value).normalize("NFKC").replace(/[^0-9]/g, ""), 10);
       if (!(p >= 0)) { const er = $("bkErr"); er.textContent = "値段を数字で入れてください"; er.hidden = false; return; }
-      const s2 = DATA.sets[bulk.si], o2 = s2.own[bulk.oi], sel = bulk.sel.slice(), si = bulk.si;
+      const s2 = DATA.sets[bulk.si], sel = bulk.sel.slice();
       notePrice(p);
       bulk = null;
       sheet.hidden = true; sheet.innerHTML = "";
-      sel.forEach((v) => {
-        if (entryAt(s2, o2, v)) return;   // 念のため：入っているマスは上書きしない
+      sel.forEach((x) => {
+        const o2 = s2.own[x.oi], v = x.v;
+        if (!o2 || entryAt(s2, o2, v)) return;   // 念のため：入っているマスは上書きしない
         const vol = s2.vol[v - 1] || [];
-        const data = { id: newId(), at: new Date().toISOString(), d: today(), s: s2.s, gc: s2.col, a: s2.a || "", t: s2.t || "", oc: o2.c, oi: s2.own.indexOf(o2), v, vt: vol[0] || "", j: vol[1] || "", p, kari: false, dc: discR, done: false };
+        const data = { id: newId(), at: new Date().toISOString(), d: today(), s: s2.s, gc: s2.col, a: s2.a || "", t: s2.t || "", oc: o2.c, oi: x.oi, v, vt: vol[0] || "", j: vol[1] || "", p, kari: false, dc: discR, done: false };
         change({ op: "set", id: data.id, data });
       });
       tToast(sel.length + "冊に " + yen(p) + "円を入れました");
