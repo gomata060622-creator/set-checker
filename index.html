@@ -84,7 +84,7 @@ main { padding-block: 12px 40px; display: flex; flex-direction: column; gap: 12p
 .fact .v { font-size: 16px; font-weight: 700; }
 .fact .v.minus { color: var(--bad); }
 .toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
-.tablebox { overflow: auto; max-height: calc(100dvh - 110px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overscroll-behavior: contain; }
+.tablebox { overflow: auto; max-height: calc(100dvh - 110px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overscroll-behavior-x: contain; overscroll-behavior-y: auto; margin-right: 24px; }   /* 右に指で画面を動かす場所を空ける。表の上下の端まで来たら、そのまま画面が動く（2026-11-13） */
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { padding: 6px 6px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
 th { font-size: 11px; color: var(--muted); font-weight: 400; position: sticky; top: 0; z-index: 2; background: var(--panel); }
