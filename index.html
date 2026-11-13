@@ -193,6 +193,7 @@ td.own .mark { font-size: 9px; font-weight: 400; color: var(--miss-fg); margin-l
 .tr .tr-sale2 { color: #8a5a00; }
 .tr .tr-ev { border-top: 1px dashed var(--line); padding: 6px 0; }
 .tr .tr-star { color: #e6a700; }
+.avgl { font-size: 13px; margin-top: 2px; color: var(--good); }
 .kname { color: #8a3ab9; font-weight: 700; font-size: 11px; }
 .hist { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .hist h2 { margin: 0; font-size: 14px; padding: 8px 12px; background: var(--accent-soft); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -1491,6 +1492,10 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
 
   // ---------- ニュース：Kronosの最近の情報を新しい順に（押すとそのセットを探す） ----------
+  // そろえるときの1巻平均の上限＝セットデータの「平均仕入価格」（販売価格 − 手数料2つ − 利益1,000円）÷ 巻数
+  function avgLimit(st) {
+    return typeof st.avg === "number" ? { v: st.avg, n: st.n || st.vol.length } : null;
+  }
   let showNews = function () {
     curView = { type: "news" };
     const rows = [];
@@ -1508,13 +1513,15 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     rows.sort((x, y) => y.d.localeCompare(x.d));
     const shown = rows.filter((r) => r.src === "Kronos").concat(rows.filter((r) => r.src === "小部屋").slice(0, 40)).sort((x, y) => y.d.localeCompare(x.d));
     rows.length = 0; shown.forEach((r) => rows.push(r));
-    const has = (r) => r.si != null || (DATA && !DATA.sample && DATA.sets.some((st) => krOf(st).includes(r.it)));
-    let h = '<div class="callout"><div><b>ニュース</b>（Kronosとセットの小部屋の最近の情報）</div><div class="note">押すと、そのセットを開きます。「登録済み」はセットデータにあるもの。</div></div>';
+    const setOf = (r) => r.si != null ? DATA.sets[r.si] : DATA && !DATA.sample ? DATA.sets.find((st) => krOf(st).includes(r.it)) : null;
+    const has = (r) => !!setOf(r);
+    const limHtml = (r) => { const st = setOf(r), L = st && avgLimit(st); return L ? '<div class="avgl num">' + (L.v > 0 ? "1巻平均 <b>" + yen(L.v) + "円</b>までで揃えれば利益1,000円（" + L.n + "巻）" : '<span class="minus">利益1,000円は出ない（1巻平均 ' + yen(L.v) + "円）</span>") + "</div>" : ""; };
+    let h = '<div class="callout"><div><b>ニュース</b>（Kronosとセットの小部屋の最近の情報）</div><div class="note">押すと、そのセットを開きます。「登録済み」はセットデータにあるもの。1巻平均は、販売価格から手数料と利益1,000円を引いて巻数で割った金額です。</div></div>';
     if (!rows.length) h += '<div class="empty"><b>まだ情報がありません</b></div>';
     else {
       h += '<section class="day">';
       rows.forEach((r) => {
-        h += '<button type="button" class="item newsrow" data-w="' + esc(r.w) + '"' + (r.si != null ? ' data-si="' + r.si + '"' : "") + '><div class="sub num"><span>' + esc(r.d.slice(5)) + '</span><span class="' + (r.src === "Kronos" ? "kname" : "") + '">' + r.src + "</span>" + (has(r) ? '<span class="chip">登録済み</span>' : "") + '</div><div class="t">' + esc(r.w) + '</div><div class="au">' + esc(r.t) + "</div></button>";
+        h += '<button type="button" class="item newsrow" data-w="' + esc(r.w) + '"' + (r.si != null ? ' data-si="' + r.si + '"' : "") + '><div class="sub num"><span>' + esc(r.d.slice(5)) + '</span><span class="' + (r.src === "Kronos" ? "kname" : "") + '">' + r.src + "</span>" + (has(r) ? '<span class="chip">登録済み</span>' : "") + '</div><div class="t">' + esc(r.w) + '</div><div class="au">' + esc(r.t) + "</div>" + limHtml(r) + "</button>";
       });
       h += "</section>";
     }
