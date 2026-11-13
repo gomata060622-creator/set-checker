@@ -50,6 +50,7 @@ button:focus-visible, .btn:focus-within { outline: 3px solid var(--accent); }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-top: 6px; font-size: 12px; color: var(--muted); }
 .meta .sample { color: var(--miss-fg); font-weight: 700; }
 .filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.quick button { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .filebtn { position: relative; font-size: 12px; padding: 4px 10px; }
 .backbtn { padding: 10px 10px; font-size: 14px; font-weight: 700; color: var(--accent); border-color: var(--accent); }
 .backbtn[aria-disabled="true"] { opacity: .35; }
@@ -1035,6 +1036,13 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     updateDiscBtn();
   });
   updateDiscBtn();
+  // 長押しで消した値段のボタン。2台のスマホで同じになるよう、保存場所（history の "_cfg_qp"）にも送る（2026-11-14）
+  function qpHidden() { try { return JSON.parse(localStorage.getItem("sc_qp_hidden") || "[]") || []; } catch (e) { return []; } }
+  function qpHide(p) {
+    const h = qpHidden(); if (!h.includes(p)) h.push(p);
+    try { localStorage.setItem("sc_qp_hidden", JSON.stringify(h)); } catch (e) {}
+    if (API) queueOp({ c: "history", op: "set", id: "_cfg_qp", data: { hide: h, at: new Date().toISOString() } });
+  }
   function quickPrices() {
     // セットデータの「店舗」の色の値段で多かった順の14個（2026/10/30に数えた。88円・106円はけこさんがいらないので外す）。1段目の左端は「仮」
     const base = [100, 110, 132, 176, 220, 242, 308, 330, 385, 396, 440, 484, 495, 550, 605];   // 605円は2026-11-13に足した
@@ -1043,7 +1051,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     // 2台のスマホで同じボタンになるよう、保存場所に送った記入（セット本の値段）からも足す
     let shared = [];
     try { shared = allEntries().filter((e) => e && !e.kari && e.p > 0).map((e) => e.p); } catch (e) {}
-    return [...new Set(base.concat(ex.filter((x) => x > 0), shared))].sort((a, b) => a - b);   // 手で入れた値段も足して安い順
+    const hide = qpHidden();
+    return [...new Set(base.concat(ex.filter((x) => x > 0), shared))].filter((x) => !hide.includes(x)).sort((a, b) => a - b);   // 手で入れた値段も足して安い順（消したボタンは出さない）
   }
   function openEditor(si, oi, v) {
     edPos = { y: window.scrollY, l: hLeft, t: hTop };
@@ -1069,7 +1078,28 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     inp.addEventListener("focus", () => { try { inp.select(); } catch (e) {} });   // 前回の値段が入っていても、打てばそのまま置き換わる
     markEditing(oi, v);
     // キーボードは自動で出さない（値段の欄を指で押したときだけ出る）。ボタンで済むことが多いため
-    sheet.querySelectorAll("[data-qp]").forEach((b) => b.addEventListener("click", () => { inp.value = b.dataset.qp; $("edForm").requestSubmit(); }));
+    // 値段のボタン：押すとその値段で保存。長押し（0.6秒）でそのボタンを消すか聞く
+    sheet.querySelectorAll("[data-qp]").forEach((b) => {
+      let tm = null, longed = false;
+      const qp = +b.dataset.qp;
+      const cancel = () => { clearTimeout(tm); tm = null; };
+      b.addEventListener("pointerdown", () => {
+        longed = false;
+        if (!(qp > 0)) return;
+        tm = setTimeout(() => {
+          longed = true;
+          try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
+          const er = $("edErr");
+          er.innerHTML = yen(qp) + '円のボタンを消しますか <button type="button" id="qpDel" class="btn-danger">消す</button> <button type="button" id="qpNo">やめる</button>';
+          er.hidden = false;
+          $("qpDel").addEventListener("click", () => { qpHide(qp); openEditor(si, oi, v); });
+          $("qpNo").addEventListener("click", () => { er.hidden = true; });
+        }, 600);
+      });
+      ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => b.addEventListener(ev, cancel));
+      b.addEventListener("contextmenu", (e) => e.preventDefault());
+      b.addEventListener("click", (e) => { if (longed) { e.preventDefault(); longed = false; return; } inp.value = b.dataset.qp; $("edForm").requestSubmit(); });
+    });
     $("edClose").addEventListener("click", closeEditor);
     const ek = $("edKari");
     if (ek) ek.addEventListener("click", () => {
@@ -1303,7 +1333,11 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       syncOk = true; syncAt = new Date();
       // 見たセットの履歴：最初はこの端末だけにある分を送り、あとは保存場所のものに合わせる
       const srv = new Map();
-      (j.history || []).forEach((x) => { if (x && x.id) srv.set(x.id, x); });
+      (j.history || []).forEach((x) => {
+        if (!x || !x.id) return;
+        if (x.id === "_cfg_qp") { try { if (Array.isArray(x.hide)) localStorage.setItem("sc_qp_hidden", JSON.stringify(x.hide)); } catch (e) {} return; }   // 消したボタン（履歴には出さない）
+        srv.set(x.id, x);
+      });
       if (histFirst) {
         histFirst = false;
         hist.forEach((x, id) => {
