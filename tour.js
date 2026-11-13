@@ -49,7 +49,7 @@
   }
   // ---------- 道路での移動時間（OSRM・無料。電波がないときや使えないときは目安） ----------
   const DUR = new Map(); let durKey = "", durState = "";
-  const pid = (p) => p.id || "home";
+  const pid = (p) => p.id || (p.lat.toFixed(4) + "," + p.lng.toFixed(4));
   async function fetchDur(pts) {
     const key = pts.map(pid).join(",") + "|" + S.home.lat + "," + S.home.lng;
     if (key === durKey) return;
@@ -166,8 +166,8 @@
       rows.push({ s, arr, wait, h, km: dkm(pos, s) });
       t += S.stay; pos = s;
     }
-    const backMin = S.back ? mins(pos, S.home) : 0;
-    return { ok, rows, end: t + backMin, back: S.back ? dkm(pos, S.home) : 0 };
+    const backMin = S.back ? mins(pos, HOME0) : 0;
+    return { ok, rows, end: t + backMin, back: S.back ? dkm(pos, HOME0) : 0 };
   }
   const cost = (order, day) => { const r = simulate(order, day); return r.ok ? r.end : Infinity; };
   function plan(list, day, limitEnd) {
@@ -217,9 +217,9 @@
   }
   function gmapLinks(order) {
     // Googleマップは経由地9か所まで。多いときは分ける
-    const pts = order.map((s) => s.lat + "," + s.lng), home = S.home.lat + "," + S.home.lng;
+    const pts = order.map((s) => s.lat + "," + s.lng), home = HOME0.lat + "," + HOME0.lng;
     const out = [];
-    let start = home, i = 0;
+    let start = S.home.lat + "," + S.home.lng, i = 0;
     while (i < pts.length) {
       const chunk = pts.slice(i, i + 9);
       i += chunk.length;
@@ -260,9 +260,9 @@
       m.on("click", () => onTap(s));
       if (n || inC) pts.push([s.lat, s.lng]);
     });
-    if (order.length) L.polyline([[S.home.lat, S.home.lng]].concat(order.map((s) => [s.lat, s.lng])).concat(S.back ? [[S.home.lat, S.home.lng]] : []), { color: "#c0392b", weight: 3, opacity: 0.7 }).addTo(layer);
+    if (order.length) L.polyline([[S.home.lat, S.home.lng]].concat(order.map((s) => [s.lat, s.lng])).concat(S.back ? [[HOME0.lat, HOME0.lng]] : []), { color: "#c0392b", weight: 3, opacity: 0.7 }).addTo(layer);
     if (S.mode === "radius") L.circle([(S.center || S.home).lat, (S.center || S.home).lng], { radius: S.radius * 1000, color: "#1a5fb4", weight: 1, fillOpacity: 0.05 }).addTo(layer);
-    map.on("click", (e) => { if (S.mode === "radius" && S.pickCenter) { S.center = { lat: e.latlng.lat, lng: e.latlng.lng, name: "地図で選んだ所" }; S.pickCenter = false; save(); render(); } else if (S.pickHome) { S.home = { lat: e.latlng.lat, lng: e.latlng.lng, name: "地図で選んだ出発地" }; S.pickHome = false; save(); render(); } });
+    map.on("click", (e) => { if (S.mode === "radius" && S.pickCenter) { S.center = { lat: e.latlng.lat, lng: e.latlng.lng, name: "地図で選んだ所" }; S.pickCenter = false; save(); render(); } else if (S.pickHome) { S.home = { lat: e.latlng.lat, lng: e.latlng.lng, name: "地図で選んだ出発地" }; S.pickHome = false; save(); render(); toast("出発地を地図で選んだ場所にしました"); } });
     if (pts.length > 1) map.fitBounds(pts, { padding: [20, 20] }); else map.setView(pts[0], 12);
   }
 
@@ -282,14 +282,14 @@
     const MAX = 40;
     let capped = 0;
     if (grp.length > MAX) { capped = grp.length; grp = grp.slice().sort((a, b) => km(S.home, a) - km(S.home, b)).slice(0, MAX); }
-    if (grp.length && navigator.onLine !== false) fetchDur([S.home].concat(grp));
+    if (grp.length && navigator.onLine !== false) fetchDur((pid(S.home) === pid(HOME0) ? [S.home] : [S.home, HOME0]).concat(grp));
     const res = plan(grp, day);
     const prefs = [...new Set(all().map((s) => s.pref))].filter(Boolean);
     const cities = [...new Set(all().filter((s) => s.pref === S.pref).map((s) => cityKey(s)))].sort((a, b) => a.localeCompare(b, "ja"));
     let h = '<section class="tr">';
     h += '<div class="callout"><div><b>店回り</b>（回る店を選ぶと、閉店に間に合う効率のいい順を出します）</div>' +
-      '<div class="note">出発：' + esc(S.home.name) + '　<button type="button" class="purchbtn" id="trHomeHere">現在地にする</button> <button type="button" class="purchbtn" id="trHomeMap">地図で選ぶ</button> <button type="button" class="purchbtn" id="trHomeReset">家に戻す</button>' +
-      '<div class="tr-row"><input type="text" id="trHomeAddr" placeholder="出発地の住所（例：大阪市都島区東野田町3丁目）" style="flex:1;min-width:12em"> <button type="button" class="purchbtn" id="trHomeSet">ここから出発</button></div></div></div>';
+      '<div class="note">出発：' + esc(S.home.name) + '　<button type="button" class="purchbtn" id="trHomeHere">現在地にする</button> <button type="button" class="purchbtn" id="trHomeMap">地図で出発地を選ぶ</button> <button type="button" class="purchbtn" id="trHomeReset">家に戻す</button>' +
+      '<div class="tr-row"><input type="text" id="trHomeAddr" placeholder="店の名前と地域・住所（例：エナジーモータースタイル 伊丹）" style="flex:1;min-width:12em"> <button type="button" class="purchbtn" id="trHomeSet">探す</button></div><div id="trHomeHits"></div></div></div>';
     // セール・イベントの一覧（星の店だけ）
     const up = upcoming(14);
     if (up.length || (NEWS && NEWS.news && NEWS.news.length)) {
@@ -316,7 +316,7 @@
     } else {
       h += '<div class="note">地図の店を押すと、回る店に入れたり外したりできます（' + S.picked.length + '店を選択中）。 <button type="button" class="purchbtn" id="trPickClear">選んだ店を全部外す</button></div>';
     }
-    if (S.pickHome) h += '<div class="note"><b>地図の上で出発地を押してください</b></div>';
+
     h += "</div>";
     // 条件
     h += '<div class="tr-box tr-row">' +
@@ -324,10 +324,12 @@
       ' 出発 <input type="time" id="trDep" value="' + esc(S.dep) + '">' +
       ' 1店 <select id="trStay">' + [15, 20, 30, 40, 45, 60, 90].map((m) => '<option' + (m === S.stay ? " selected" : "") + ">" + m + "</option>").join("") + "</select>分" +
       ' 速さ <select id="trSpd">' + [15, 20, 25, 30, 40].map((m) => '<option' + (m === S.speed ? " selected" : "") + ">" + m + "</option>").join("") + "</select>km/h" +
-      ' <label><input type="checkbox" id="trBack"' + (S.back ? " checked" : "") + ">出発地に戻る</label>" +
+      ' <label><input type="checkbox" id="trBack"' + (S.back ? " checked" : "") + ">最後は家に帰る</label>" +
       ' 分ける <select id="trGrp">' + [1, 2, 3, 4].map((n) => '<option' + (n === S.groups ? " selected" : "") + ">" + n + "</option>").join("") + "</select>つ</div>";
     if (groups.length > 1) h += '<div class="tr-tabs">' + groups.map((g, i) => '<button type="button" class="purchbtn' + (i === gi ? " dcon" : "") + '" data-g="' + i + '">' + esc(g.name) + "（" + g.l.length + "店）</button>").join("") + "</div>";
     // 地図
+    if (S.pickHome) h += '<div class="note" id="trPickMsg" style="background:#fff3cd;padding:6px"><b>地図の上の出発したい場所を押してください</b>（店のピンを押すと、その店から出発）</div>';
+    else if (S.mode === "pick") h += '<div class="note">地図の店のピンを押すと、回る店に入れたり外したりできます</div>';
     h += '<div id="trMap" class="tr-map"></div>';
     // 結果
     const sim = res.sim;
@@ -337,7 +339,7 @@
     h += '<div class="tr-sum">候補 ' + grp.length + "店のうち <b>" + res.order.length + "店</b> 回れます" + (res.order.length ? "（" + hhmm(toMin(S.dep)) + "出発 → " + hhmm(sim.end) + (S.back ? "帰着" : "最後の店を出る") + "）" : "") + "</div>";
     if (res.order.length) {
       h += '<ol class="tr-list">' + sim.rows.map((r, i) => '<li><b>' + hhmm(r.arr) + "</b>着 " + esc(r.s.name) + '<div class="note">' + (r.h ? "営業 " + esc(r.h.t) : "営業時間不明") + (r.s.note ? "　<b>" + esc(r.s.note) + "</b>" : "") + saleBadge(r.s) + (r.wait > 0 ? "（開店まで" + Math.round(r.wait) + "分待ち）" : "") + "　前から約" + r.km.toFixed(1) + "km・" + esc(r.s.address || "") + ' <button type="button" class="purchbtn" data-off="' + esc(r.s.id) + '">今日は外す</button> <button type="button" class="purchbtn" data-never="' + esc(r.s.id) + '">もう行かない</button> ' + starBtn(r.s) + "</div></li>").join("") + "</ol>";
-      if (S.back) h += '<div class="note">最後の店から出発地まで約' + sim.back.toFixed(1) + "km</div>";
+      if (S.back) h += '<div class="note">最後の店から家まで約' + sim.back.toFixed(1) + "km</div>";
       h += '<div class="actions"><button type="button" class="btn btn-primary" id="trCsv">ツーリングサポーター用に書き出す</button></div>';
       h += '<div class="actions">' + gmapLinks(res.order).map((u, i, a) => '<a class="btn" target="_blank" rel="noopener" href="' + esc(u) + '">Googleマップで開く' + (a.length > 1 ? "（" + (i + 1) + "/" + a.length + "）" : "") + "</a>").join("") + "</div>";
       h += '<div class="note">書き出したCSVは、ツーリングサポーターのWeb版マイページの「My地点」→「地点をインポート」で取り込めます（1回100件まで）。経由地は8か所までなので、9店以上の日はルートを分けてください。移動時間は、まっすぐの距離×1.3を速さで割った目安です。</div>';
@@ -355,6 +357,7 @@
     bind(main, res, up);
     mapEl = main.querySelector("#trMap");
     drawMap(mapEl, cands, res.order, (s) => {
+      if (S.pickHome) { S.home = { lat: s.lat, lng: s.lng, name: s.name }; S.pickHome = false; re(); toast("出発地を「" + s.name + "」にしました"); return; }
       if (S.mode === "pick") { const i = S.picked.indexOf(s.id); if (i >= 0) S.picked.splice(i, 1); else S.picked.push(s.id); }
       else { const i = S.off.indexOf(s.id); if (i >= 0) S.off.splice(i, 1); else if (cands.some((c) => c.id === s.id)) S.off.push(s.id); else { toast("範囲の外の店です。「地図で選ぶ」にすると自由に選べます"); return; } }
       save(); render();
@@ -395,7 +398,7 @@
     on("trOffClear", "click", () => { S.off = []; re(); });
     on("trPickClear", "click", () => { S.picked = []; re(); });
     on("trHomeReset", "click", () => { S.home = HOME0; re(); });
-    on("trHomeMap", "click", () => { S.pickHome = true; re(); });
+    on("trHomeMap", "click", async () => { S.pickHome = true; save(); await render(); setTimeout(() => { const m = $("trPickMsg"), bar = document.querySelector(".bar"); if (m) window.scrollTo(0, m.getBoundingClientRect().top + window.scrollY - (bar ? bar.offsetHeight : 0) - 8); }, 50); });
     on("trCtrMap", "click", () => { S.pickCenter = true; re(); });
     on("trCtrHome", "click", () => { S.center = null; re(); });
     const here = (f) => { if (!navigator.geolocation) return toast("このスマホでは現在地が取れません"); toast("現在地を調べています…"); navigator.geolocation.getCurrentPosition((p) => { f({ lat: p.coords.latitude, lng: p.coords.longitude }); re(); toast("現在地にしました"); }, () => toast("現在地を取れませんでした"), { enableHighAccuracy: true, timeout: 15000 }); };
@@ -403,15 +406,28 @@
     on("trCtrHere", "click", () => here((p) => { S.center = Object.assign(p, { name: "現在地" }); }));
     on("trCsv", "click", () => { const d = new Date(); download("店回り_" + (d.getMonth() + 1) + "月" + d.getDate() + "日.csv", csvTS(res.order, res.sim)); });
     on("trHomeSet", "click", async () => {
-      const addr = $("trHomeAddr").value.trim();
-      if (!addr) return toast("出発地の住所を入れてください");
+      const q = $("trHomeAddr").value.trim(), box = $("trHomeHits");
+      if (!q) return toast("店の名前や住所を入れてください");
+      box.innerHTML = '<div class="note">探しています…</div>';
+      const hits = [];
+      // 1) 店の一覧（ブックオフ・古本市場など）から
+      const ws = q.replace(/ブックオフ/g, "BOOKOFF").split(/[\s　]+/).filter(Boolean);
+      all().filter((x) => ws.every((w) => (x.name + (x.address || "")).includes(w))).slice(0, 3).forEach((x) => hits.push({ lat: x.lat, lng: x.lng, name: x.name, sub: x.address || "" }));
+      // 2) 地図のお店・施設（OpenStreetMap）
       try {
-        const r = await (await fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(addr))).json();
-        if (!r || !r.length) return toast("住所から位置が見つかりませんでした");
-        const [lng, lat] = r[0].geometry.coordinates;
-        S.home = { lat, lng, name: addr };
-        re(); toast("出発地を「" + addr + "」にしました");
-      } catch (e) { toast("住所を調べられませんでした（電波を確かめてください）"); }
+        const r = await (await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&limit=5&accept-language=ja&q=" + encodeURIComponent(q))).json();
+        r.forEach((x) => hits.push({ lat: +x.lat, lng: +x.lon, name: x.name || q, sub: x.display_name.split(", ").reverse().filter((t) => !/^\d{3}-|日本/.test(t)).join("") }));
+      } catch (e) {}
+      // 3) 住所（国土地理院）
+      if (!hits.length) {
+        try {
+          const r = await (await fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(q))).json();
+          (r || []).slice(0, 3).forEach((x) => hits.push({ lat: x.geometry.coordinates[1], lng: x.geometry.coordinates[0], name: x.properties.title, sub: "" }));
+        } catch (e) {}
+      }
+      if (!hits.length) { box.innerHTML = '<div class="note">見つかりませんでした。地域を足すか、住所で入れてください（電波も確かめてください）</div>'; return; }
+      box.innerHTML = hits.map((x, i) => '<div class="tr-row"><button type="button" class="purchbtn" data-hit="' + i + '">ここから出発</button> <b>' + esc(x.name) + '</b> <span class="note">' + esc(x.sub) + "</span></div>").join("");
+      box.querySelectorAll("[data-hit]").forEach((b) => b.addEventListener("click", () => { const x = hits[+b.dataset.hit]; S.home = { lat: x.lat, lng: x.lng, name: x.name }; re(); toast("出発地を「" + x.name + "」にしました"); }));
     });
     on("trMyAdd", "click", async () => {
       const name = $("trMyName").value.trim(), addr = $("trMyAddr").value.trim(), hrs = $("trMyHrs").value.trim();
