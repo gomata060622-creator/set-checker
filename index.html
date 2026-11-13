@@ -1001,7 +1001,18 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   // よく買う値段：132円・242円はいつも出し、ほかは記入した回数の多い順（この端末に残す）
   let priceCnt = {};
   try { priceCnt = JSON.parse(localStorage.getItem("sc_prices") || "{}") || {}; } catch (e) { priceCnt = {}; }
-  const notePrice = (p) => { priceCnt[p] = (priceCnt[p] || 0) + 1; try { localStorage.setItem("sc_prices", JSON.stringify(priceCnt)); } catch (e) {} };
+  // 値段を保存したとき：数えるほか、ボタンにない値段はボタンに足し、最後の値段として覚える（次に開いたとき欄に入れておく）2026-11-14
+  //   足したボタンはこのスマホだけに覚える
+  const notePrice = (p) => {
+    priceCnt[p] = (priceCnt[p] || 0) + 1;
+    try {
+      localStorage.setItem("sc_prices", JSON.stringify(priceCnt));
+      if (p > 0) {
+        localStorage.setItem("sc_lastp", String(p));
+        if (!quickPrices().includes(p)) { const ex = JSON.parse(localStorage.getItem("sc_qp_extra") || "[]"); ex.push(p); localStorage.setItem("sc_qp_extra", JSON.stringify(ex)); }
+      }
+    } catch (e) {}
+  };
   // 仮の金額：店で値段を入れずに登録するときの金額。安めにすると「いくらまで」が甘くなるので、高めにしておく
   let kariP = 330;
   try { const k = parseInt(localStorage.getItem("sc_kariP") || "", 10); if (k > 0) kariP = k; } catch (e) {}
@@ -1027,7 +1038,13 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   updateDiscBtn();
   function quickPrices() {
     // セットデータの「店舗」の色の値段で多かった順の14個（2026/10/30に数えた。88円・106円はけこさんがいらないので外す）。1段目の左端は「仮」
-    return [100, 110, 132, 176, 220, 242, 308, 330, 385, 396, 440, 484, 495, 550, 605];   // 605円は2026-11-13に足した
+    const base = [100, 110, 132, 176, 220, 242, 308, 330, 385, 396, 440, 484, 495, 550, 605];   // 605円は2026-11-13に足した
+    let ex = [];
+    try { ex = JSON.parse(localStorage.getItem("sc_qp_extra") || "[]") || []; } catch (e) {}
+    // 2台のスマホで同じボタンになるよう、保存場所に送った記入（セット本の値段）からも足す
+    let shared = [];
+    try { shared = allEntries().filter((e) => e && !e.kari && e.p > 0).map((e) => e.p); } catch (e) {}
+    return [...new Set(base.concat(ex.filter((x) => x > 0), shared))].sort((a, b) => a - b);   // 手で入れた値段も足して安い順
   }
   function openEditor(si, oi, v) {
     edPos = { y: window.scrollY, l: hLeft, t: hTop };
@@ -1045,11 +1062,12 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       '<div class="quick" aria-label="押すとその値段で保存（値札の値段）">' +
         (ent && !ent.kari ? "" : '<button type="button" id="edKari" class="karibtn num" aria-label="金額はあとで入れる（仮の金額で登録）">仮 ' + yen(kariP) + "</button>") +
         quickPrices().map((p) => '<button type="button" class="num" data-qp="' + p + '">' + yen(p) + "</button>").join("") + '<button type="button" class="num" data-qp="0" aria-label="0円（上下2冊で1つの値段の本の下巻など）">0</button></div>' +
-      '<form id="edForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="値段" value="' + (ent && !ent.kari ? ent.p : "") + '" aria-label="買った値段"><span>円</span>' +
+      '<form id="edForm" class="row"><input id="price" type="text" inputmode="numeric" autocomplete="off" placeholder="値段" value="' + (ent && !ent.kari ? ent.p : (localStorage.getItem("sc_lastp") || "")) + '" aria-label="買った値段"><span>円</span>' +
       '<button type="submit" class="btn-primary">保存</button>' + (ent ? '<button type="button" id="edDel" class="btn-danger">消す</button>' : "") + '<button type="button" id="edClose">閉じる</button></form>' +
       '<div id="edErr" class="err" hidden></div>';
     sheet.hidden = false;
     const inp = $("price");
+    inp.addEventListener("focus", () => { try { inp.select(); } catch (e) {} });   // 前回の値段が入っていても、打てばそのまま置き換わる
     markEditing(oi, v);
     // キーボードは自動で出さない（値段の欄を指で押したときだけ出る）。ボタンで済むことが多いため
     sheet.querySelectorAll("[data-qp]").forEach((b) => b.addEventListener("click", () => { inp.value = b.dataset.qp; $("edForm").requestSubmit(); }));
