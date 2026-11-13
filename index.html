@@ -1534,9 +1534,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const corner = names[i] || "コミック", cc = codes[i] || codes[1] || "11";
       const byTitle = /少女|文庫コミック|ワイド|完全版|愛蔵版/.test(corner);
       const sub = byTitle ? "タイトル順" : pb;
-      // 少年コミックは店と同じく 集英社 → 講談社 → 小学館 → その他 の順（ブックオフの分類の番号）、その中を出版社 → 作者
-      const pc = !byTitle && i === 1 && codes[2] ? codes[2] : cc;
-      const key = pc.padEnd(10, "0") + "|" + (byTitle ? "" : sub + "|" + au) + "|" + title;
+      // 少年・青年コミックは出版社 → 作者。出版社は店と同じく小学館から（小学館 → 集英社 → 講談社 → ほかの出版社は名前順）2026-11-14
+      const pr = /小学館/.test(sub) ? 0 : /集英社/.test(sub) ? 1 : /講談社/.test(sub) ? 2 : 3;
+      const key = cc.padEnd(10, "0") + "|" + (byTitle ? "" : pr + sub + "|" + au) + "|" + title;
       return { corner, sub, key, label: corner + (sub ? "・" + sub : ""), src: "ブックオフ", au };
     }
     // 本：上から2つ目（文庫の小説・教養など）を売り場、その下を棚の札にする
