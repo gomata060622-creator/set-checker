@@ -110,6 +110,12 @@ td.own.editing { background: #ffe14d !important; color: #1d2530 !important; outl
 .au { font-size: 12px; color: var(--fg); margin-top: 2px; }
 .chip .nd { color: var(--fg); font-weight: 700; }
 .au.big { font-size: 15px; font-weight: 700; }
+.simg { display: flex; gap: 6px; overflow-x: auto; margin: 6px 0 2px; -webkit-overflow-scrolling: touch; }
+.simg img { height: 150px; width: auto; max-width: none; flex: none; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.simg .noimg { font-size: 12px; color: var(--muted); padding: 4px 0; }
+.sbtns { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.sbtns a { font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; text-decoration: none; color: inherit; background: #fff; }
+.bigimg { width: 100%; height: auto; max-height: 80vh; object-fit: contain; }
 td.vt .va { display: block; color: var(--accent); font-size: 10px; }
 .quick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .quick button { font-size: 15px; padding: 8px 0; font-weight: 700; color: var(--accent); border-color: var(--accent); }
@@ -635,6 +641,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     h += '<section class="head"><h1>' + esc(s.t || "（セット名なし）") + "</h1>";
     h += '<div class="note num">' + esc(s.cat || "") + "　" + esc(s.s) + " " + esc(s.col) + "列" + (s.a ? "　ASIN " + esc(s.a) : "") + "</div>";
     if (auLine(s)) h += '<div class="au big">' + auLine(s) + "</div>";
+    // セットの画像（Amazonの商品画像。横にめくれる・押すと大きく）と、背表紙を探しに行くボタン
+    h += '<div class="simg" id="simg"></div><div class="sbtns"><a href="https://jp.mercari.com/search?keyword=' + encodeURIComponent(s.t || "") + '" target="_blank" rel="noopener">メルカリで見る</a><a href="https://www.google.com/search?tbm=isch&q=' + encodeURIComponent((s.t || "") + " 背表紙") + '" target="_blank" rel="noopener">Googleで背表紙を探す</a></div>';
     // 読み取った巻の答え
     if (vi >= 0 && vi < s.vol.length) {
       const vs = volStatus(s, vi);
@@ -708,6 +716,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const back = $("back");
     if (back) back.addEventListener("click", () => showList(lastList.intro));
     setupHbar(keepScroll);
+    fillSetImg(s);
     main.querySelectorAll("td.own.tap").forEach((td) => td.addEventListener("click", () => {
       if (bulk && bulk.si === si) bulkTap(td); else openEditor(si, +td.dataset.oi, +td.dataset.v);
     }));
@@ -2127,6 +2136,121 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     return j;
   }
 
+  // ---------- セットの画像（Amazonの商品画像） ----------
+  //   画像の名前はKeepaで取る（1セット1トークン）。画像そのものはスマホの中（sc-setimg）に残すので、2回目からは電波なしで出る
+  const IMGC = "sc-setimg", IMGS = "._SL500_.jpg";
+  let IMGIDS = null, imgRun = null;
+  const setAsin = (s) => String(s.a || ((s.own || []).find((o) => o.a) || {}).a || "").toUpperCase();
+  const imgUrl = (id) => "https://m.media-amazon.com/images/I/" + String(id).replace(/\.[a-z]+$/i, "") + IMGS;
+  async function imgIdsLoad() {
+    if (IMGIDS) return IMGIDS;
+    try { const r = await (await caches.open(IMGC)).match("./__imgids.json"); IMGIDS = r ? await r.json() : {}; } catch (e) { IMGIDS = {}; }
+    return IMGIDS;
+  }
+  async function imgIdsSave() {
+    try { await (await caches.open(IMGC)).put("./__imgids.json", new Response(JSON.stringify(IMGIDS), { headers: { "Content-Type": "application/json" } })); } catch (e) {}
+  }
+  function idsOfProduct(p) {
+    if (Array.isArray(p.images) && p.images.length) return p.images.map((im) => im.l || im.m || im.s).filter(Boolean);
+    if (p.imagesCSV) return String(p.imagesCSV).split(",").filter(Boolean);
+    return [];
+  }
+  // Keepaで画像の名前を取る（100件ずつ）。トークンが足りないときは待ってからやり直す
+  async function imgIdsFetch(asins, onWait) {
+    for (let i = 0; i < asins.length; i += 100) {
+      const part = asins.slice(i, i + 100);
+      for (;;) {
+        if (imgRun && imgRun.stop) return;
+        try {
+          const j = await keepa("asin=" + part.join(",") + "&history=0");
+          const got = new Set();
+          (j.products || []).forEach((p) => { if (p && p.asin) { IMGIDS[p.asin.toUpperCase()] = idsOfProduct(p); got.add(p.asin.toUpperCase()); } });
+          part.forEach((a) => { if (!got.has(a)) IMGIDS[a] = []; });
+          await imgIdsSave();
+          break;
+        } catch (e) {
+          if (!/トークン/.test((e && e.message) || "")) throw e;
+          if (onWait) onWait();
+          await new Promise((r) => setTimeout(r, 60000));
+        }
+      }
+    }
+  }
+  async function imgGet(id, c) {
+    const u = imgUrl(id);
+    const hit = await c.match(u);
+    if (hit) return hit.blob();
+    if (!navigator.onLine) return null;
+    const r = await fetch(u, { mode: "cors" });
+    if (!r.ok) return null;
+    await c.put(u, r.clone());
+    return r.blob();
+  }
+  async function fillSetImg(s) {
+    const box = $("simg");
+    if (!box) return;
+    const a = setAsin(s);
+    if (!a) { box.innerHTML = '<span class="noimg">ASINがないので画像はありません</span>'; return; }
+    await imgIdsLoad();
+    if (!IMGIDS[a] && KK && navigator.onLine) {
+      box.innerHTML = '<span class="noimg">画像を取っています…</span>';
+      try { await imgIdsFetch([a]); } catch (e) {}
+    }
+    if ($("simg") !== box) return;   // ほかの画面に移った
+    const ids = IMGIDS[a];
+    if (!ids) { box.innerHTML = '<span class="noimg">画像はまだ取っていません（電波があるときに開くか、⚙ 設定の「セットの画像をまとめて取る」で取れます）</span>'; return; }
+    if (!ids.length) { box.innerHTML = '<span class="noimg">Amazonに画像がありません</span>'; return; }
+    box.innerHTML = "";
+    const c = await caches.open(IMGC);
+    for (const id of ids) {
+      let b = null;
+      try { b = await imgGet(id, c); } catch (e) {}
+      if ($("simg") !== box) return;
+      if (!b) continue;
+      const im = document.createElement("img");
+      im.src = URL.createObjectURL(b); im.alt = "";
+      im.addEventListener("click", () => {
+        sheet.innerHTML = '<div class="st">' + esc(s.t || "") + '</div><img class="bigimg" src="' + im.src + '" alt=""><div class="row"><button type="button" id="edClose">閉じる</button></div>';
+        sheet.hidden = false;
+        $("edClose").addEventListener("click", closeEditor);
+      });
+      box.appendChild(im);
+    }
+    if (!box.children.length) box.innerHTML = '<span class="noimg">' + (navigator.onLine ? "画像を読み込めませんでした" : "画像はまだスマホに入っていません（電波があるときに開くと入ります）") + "</span>";
+  }
+  // まとめて取る：全部のセットの画像の名前（まだのものだけ）→ 画像（まだのものだけ）
+  async function imgBatch(out) {
+    if (imgRun) return;
+    imgRun = { stop: false };
+    const say = (t) => { if (out()) out().textContent = t; };
+    try {
+      if (!DATA || !DATA.sets) { say("セットのデータがまだ読み込まれていません"); return; }
+      if (!KK) { say("Keepaのキーが入っていません"); return; }
+      try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+      await imgIdsLoad();
+      const all = [...new Set(DATA.sets.map(setAsin).filter(Boolean))];
+      const need = all.filter((a) => !IMGIDS[a]);
+      say("画像の名前を取っています（" + need.length + "セット・" + need.length + "トークン）…");
+      await imgIdsFetch(need, () => say("Keepaのトークンが足りないので、1分待ってから続けます…"));
+      const c = await caches.open(IMGC);
+      const ids = [];
+      all.forEach((a) => (IMGIDS[a] || []).forEach((id) => ids.push(id)));
+      let done = 0, fail = 0, k = 0;
+      const work = async () => {
+        while (k < ids.length && !imgRun.stop) {
+          const id = ids[k++];
+          try { if (!(await imgGet(id, c))) fail++; } catch (e) { fail++; }
+          done++;
+          if (done % 10 === 0) say("画像を保存しています " + done + " / " + ids.length);
+        }
+      };
+      await Promise.all([work(), work(), work(), work()]);
+      say((imgRun.stop ? "止めました。" : "終わりました。") + "画像 " + (done - fail) + "枚を保存（" + all.length + "セット）" + (fail ? "・取れなかった画像 " + fail + "枚" : "") + (tokensLeft != null ? "・Keepa残り " + tokensLeft + "トークン" : ""));
+    } catch (e) {
+      say("止まりました：" + ((e && e.message) || "エラー") + "（もう一度押すと続きから取ります）");
+    } finally { imgRun = null; }
+  }
+
   // ---------- 計算（アマサーチと同じ：目標額＝利益率と最低利益額の両方を満たす仕入れ額） ----------
   // 手数料（アマサーチと同じ計算）：販売手数料（売値×紹介料率）＋カテゴリ成約料140円＋その2つにかかる消費税10%＋FBA手数料（FBAのときだけ）
   function feeParts(r, price, fba) {
@@ -2704,9 +2828,15 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       '<div class="row"><label><input id="tsFba" type="checkbox"' + (TSET.fba ? " checked" : "") + "> FBAを使う（手数料にFBAの料金を足す）</label></div>" +
       '<div class="row"><label><input id="tsVoice" type="checkbox"' + (TSET.voice ? " checked" : "") + "> 中古の粗利益を読み上げる</label></div>" +
       '<div class="row"><label><input id="tsAlert" type="checkbox"' + (TSET.alert ? " checked" : "") + "> プレ値（定価以上・粗利500円以上・中古良い以上）を赤くして震わせる</label></div>" +
-      '<div class="row"><button id="tsSave" class="btn-primary" type="button">保存</button><button id="edClose" type="button">閉じる</button></div>';
+      '<div class="row"><button id="tsSave" class="btn-primary" type="button">保存</button><button id="edClose" type="button">閉じる</button></div>' +
+      '<div class="st" style="margin-top:12px">セットの画像</div>' +
+      '<div class="note">全部のセットのAmazonの画像を、スマホの中に保存します（家のWi-Fiで押してください）。まだ取っていないセットの分だけKeepaのトークンを1セット1トークン使います。2回目からは新しく増えたセットの分だけです。</div>' +
+      '<div class="row"><button id="tsImg" type="button">セットの画像をまとめて取る</button><button id="tsImgStop" type="button">止める</button></div><div class="note" id="tsImgMsg"></div>';
     sheet.hidden = false;
     $("edClose").addEventListener("click", closeEditor);
+    $("tsImg").addEventListener("click", () => imgBatch(() => $("tsImgMsg")));
+    $("tsImgStop").addEventListener("click", () => { if (imgRun) imgRun.stop = true; });
+    if (imgRun) $("tsImgMsg").textContent = "取っています…";
     $("tsSave").addEventListener("click", () => {
       KK = String($("tsKey").value || "").trim();
       try { localStorage.setItem("sc_keepa", KK); } catch (e) {}
