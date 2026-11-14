@@ -2036,7 +2036,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   let TLIST = [];
   try { TLIST = JSON.parse(localStorage.getItem("sc_tlist") || "[]") || []; } catch (e) { TLIST = []; }
   const saveTlist = () => { TLIST = TLIST.slice(0, 200); try { localStorage.setItem("sc_tlist", JSON.stringify(TLIST)); } catch (e) {} };
-  let tokensLeft = null, tBusy = 0;
+  let tokensLeft = null, tBusy = 0, kRefill = null, kRefillIn = null;
   // 今日の店名（その日のうちはずっと同じ）
   let tShop = "";
   try { const s = JSON.parse(localStorage.getItem("sc_tshop") || "null"); if (s && s.d === today()) tShop = s.n || ""; } catch (e) {}
@@ -2132,6 +2132,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     let j = null;
     try { j = await r.json(); } catch (e) {}
     if (j && typeof j.tokensLeft === "number") tokensLeft = j.tokensLeft;
+    if (j && typeof j.refillRate === "number") kRefill = j.refillRate;
+    if (j && typeof j.refillIn === "number") kRefillIn = j.refillIn;
     if (!r.ok || !j) throw new Error(r.status === 429 ? "Keepaのトークンが足りません。少し待ってから読み直してください" : "Keepaにつながりませんでした（" + r.status + "）");
     if (j.error) throw new Error("Keepa：" + (j.error.message || j.error.type || "エラー"));
     return j;
@@ -2191,9 +2193,23 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         }
       }
     };
-    for (let i = 0; i < asins.length; i += 20) {
-      if (!(await one(asins.slice(i, i + 20)))) return;
-      if (onWait && onWait.prog) onWait.prog(Math.min(i + 20, asins.length), asins.length);
+    // 残りのトークンに合わせて、一度に聞く数を決める（足りない分を一度に頼むと断られるため）
+    let i = 0;
+    while (i < asins.length) {
+      if (imgRun && imgRun.stop) return;
+      let n = 20;
+      if (tokensLeft != null) {
+        if (tokensLeft < 1) {
+          if (onWait) onWait("トークン残り " + tokensLeft);
+          await new Promise((r) => setTimeout(r, Math.max(kRefillIn || 0, 5000) + 1000));
+          tokensLeft = null;   // 待ったあとは、1件聞いて残りを確かめる
+          n = 1;
+        } else n = Math.min(20, tokensLeft);
+      }
+      const part = asins.slice(i, i + n);
+      if (!(await one(part))) return;
+      i += part.length;
+      if (onWait && onWait.prog) onWait.prog(i, asins.length);
     }
   }
   async function imgGet(id, c) {
@@ -2251,8 +2267,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       const all = [...new Set(DATA.sets.map(setAsin).filter((a) => /^[0-9A-Z]{10}$/.test(a)))];
       const need = all.filter((a) => !IMGIDS[a]);
       say("画像の名前を取っています（" + need.length + "セット・" + need.length + "トークン）…");
-      const onWait = (m) => say("Keepaが混んでいるかトークンが足りないので、1分待ってから続けます…（" + (m || "") + "）");
-      onWait.prog = (d, n) => say("画像の名前を取っています " + d + " / " + n + "セット" + (tokensLeft != null ? "（Keepa残り " + tokensLeft + "トークン）" : "") + "…");
+      const onWait = (m) => say("Keepaのトークンがたまるのを待ってから、自動で続けます…（" + (m || "") + (kRefill ? "・1分に " + kRefill + "トークン増える" : "") + "）");
+      onWait.prog = (d, n) => say("画像の名前を取っています " + d + " / " + n + "セット" + (tokensLeft != null ? "（Keepa残り " + tokensLeft + "トークン" + (kRefill ? "・1分に " + kRefill + "トークン増える" : "") + "）" : "") + "…");
       await imgIdsFetch(need, onWait);
       const c = await caches.open(IMGC);
       const ids = [];
