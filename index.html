@@ -2158,23 +2158,42 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   }
   // Keepaで画像の名前を取る（100件ずつ）。トークンが足りないときは待ってからやり直す
   async function imgIdsFetch(asins, onWait) {
-    for (let i = 0; i < asins.length; i += 100) {
-      const part = asins.slice(i, i + 100);
+    asins = asins.filter((a) => /^[0-9A-Z]{10}$/.test(a));
+    const one = async (part) => {
+      let tries = 0;
       for (;;) {
-        if (imgRun && imgRun.stop) return;
+        if (imgRun && imgRun.stop) return false;
         try {
           const j = await keepa("asin=" + part.join(",") + "&history=0");
           const got = new Set();
           (j.products || []).forEach((p) => { if (p && p.asin) { IMGIDS[p.asin.toUpperCase()] = idsOfProduct(p); got.add(p.asin.toUpperCase()); } });
           part.forEach((a) => { if (!got.has(a)) IMGIDS[a] = []; });
           await imgIdsSave();
-          break;
+          return true;
         } catch (e) {
-          if (!/トークン/.test((e && e.message) || "")) throw e;
-          if (onWait) onWait();
-          await new Promise((r) => setTimeout(r, 60000));
+          const m = (e && e.message) || "";
+          // トークン切れ（Keepaは1分ごとに足される）や電波の切れ目は、待ってやり直す
+          if (/トークン/.test(m) || e instanceof TypeError || /429/.test(m)) {
+            if (++tries > 30) throw e;
+            if (onWait) onWait(m);
+            await new Promise((r) => setTimeout(r, 60000));
+            continue;
+          }
+          // それ以外（ASINがおかしいなど）は、細かく分けてやり直す。1件でもだめなら、そのASINは画像なしにして先へ
+          if (part.length > 1) {
+            const h = Math.ceil(part.length / 2);
+            if (!(await one(part.slice(0, h)))) return false;
+            return one(part.slice(h));
+          }
+          IMGIDS[part[0]] = [];
+          await imgIdsSave();
+          return true;
         }
       }
+    };
+    for (let i = 0; i < asins.length; i += 20) {
+      if (!(await one(asins.slice(i, i + 20)))) return;
+      if (onWait && onWait.prog) onWait.prog(Math.min(i + 20, asins.length), asins.length);
     }
   }
   async function imgGet(id, c) {
@@ -2229,10 +2248,12 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       if (!KK) { say("Keepaのキーが入っていません"); return; }
       try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
       await imgIdsLoad();
-      const all = [...new Set(DATA.sets.map(setAsin).filter(Boolean))];
+      const all = [...new Set(DATA.sets.map(setAsin).filter((a) => /^[0-9A-Z]{10}$/.test(a)))];
       const need = all.filter((a) => !IMGIDS[a]);
       say("画像の名前を取っています（" + need.length + "セット・" + need.length + "トークン）…");
-      await imgIdsFetch(need, () => say("Keepaのトークンが足りないので、1分待ってから続けます…"));
+      const onWait = (m) => say("Keepaが混んでいるかトークンが足りないので、1分待ってから続けます…（" + (m || "") + "）");
+      onWait.prog = (d, n) => say("画像の名前を取っています " + d + " / " + n + "セット" + (tokensLeft != null ? "（Keepa残り " + tokensLeft + "トークン）" : "") + "…");
+      await imgIdsFetch(need, onWait);
       const c = await caches.open(IMGC);
       const ids = [];
       all.forEach((a) => (IMGIDS[a] || []).forEach((id) => ids.push(id)));
