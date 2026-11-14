@@ -2145,9 +2145,11 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   let IMGIDS = null, imgRun = null;
   const setAsin = (s) => String(s.a || ((s.own || []).find((o) => o.a) || {}).a || "").toUpperCase();
   const imgUrl = (id) => "https://m.media-amazon.com/images/I/" + String(id).replace(/\.[a-z]+$/i, "") + IMGS;
+  // 画像の名前の一覧（ASIN → 画像の名前）は、KeepaのCSVからClaudeが作って data/setimg.enc に入れる（トークンを使わない）
   async function imgIdsLoad() {
     if (IMGIDS) return IMGIDS;
-    try { const r = await (await caches.open(IMGC)).match("./__imgids.json"); IMGIDS = r ? await r.json() : {}; } catch (e) { IMGIDS = {}; }
+    IMGIDS = {};
+    try { const x = await loadEnc("data/setimg.enc"); if (x && typeof x === "object") Object.assign(IMGIDS, x); } catch (e) {}
     return IMGIDS;
   }
   async function imgIdsSave() {
@@ -2228,13 +2230,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const a = setAsin(s);
     if (!a) { box.innerHTML = '<span class="noimg">ASINがないので画像はありません</span>'; return; }
     await imgIdsLoad();
-    if (!IMGIDS[a] && KK && navigator.onLine) {
-      box.innerHTML = '<span class="noimg">画像を取っています…</span>';
-      try { await imgIdsFetch([a]); } catch (e) {}
-    }
     if ($("simg") !== box) return;   // ほかの画面に移った
     const ids = IMGIDS[a];
-    if (!ids) { box.innerHTML = '<span class="noimg">画像はまだ取っていません（電波があるときに開くか、⚙ 設定の「セットの画像をまとめて取る」で取れます）</span>'; return; }
+    if (!ids) { box.innerHTML = '<span class="noimg">このセットの画像はまだ一覧に入っていません（次の更新で入ります）</span>'; return; }
     if (!ids.length) { box.innerHTML = '<span class="noimg">Amazonに画像がありません</span>'; return; }
     box.innerHTML = "";
     const c = await caches.open(IMGC);
@@ -2261,15 +2259,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const say = (t) => { if (out()) out().textContent = t; };
     try {
       if (!DATA || !DATA.sets) { say("セットのデータがまだ読み込まれていません"); return; }
-      if (!KK) { say("Keepaのキーが入っていません"); return; }
       try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
       await imgIdsLoad();
       const all = [...new Set(DATA.sets.map(setAsin).filter((a) => /^[0-9A-Z]{10}$/.test(a)))];
-      const need = all.filter((a) => !IMGIDS[a]);
-      say("画像の名前を取っています（" + need.length + "セット・" + need.length + "トークン）…");
-      const onWait = (m) => say("Keepaのトークンがたまるのを待ってから、自動で続けます…（" + (m || "") + (kRefill ? "・1分に " + kRefill + "トークン増える" : "") + "）");
-      onWait.prog = (d, n) => say("画像の名前を取っています " + d + " / " + n + "セット" + (tokensLeft != null ? "（Keepa残り " + tokensLeft + "トークン" + (kRefill ? "・1分に " + kRefill + "トークン増える" : "") + "）" : "") + "…");
-      await imgIdsFetch(need, onWait);
       const c = await caches.open(IMGC);
       const ids = [];
       all.forEach((a) => (IMGIDS[a] || []).forEach((id) => ids.push(id)));
@@ -2283,7 +2275,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         }
       };
       await Promise.all([work(), work(), work(), work()]);
-      say((imgRun.stop ? "止めました。" : "終わりました。") + "画像 " + (done - fail) + "枚を保存（" + all.length + "セット）" + (fail ? "・取れなかった画像 " + fail + "枚" : "") + (tokensLeft != null ? "・Keepa残り " + tokensLeft + "トークン" : ""));
+      say((imgRun.stop ? "止めました。" : "終わりました。") + "画像 " + (done - fail) + "枚を保存（" + all.length + "セット）" + (fail ? "・取れなかった画像 " + fail + "枚" : "") + (all.filter((a) => !IMGIDS[a]).length ? "・まだ一覧にないセット " + all.filter((a) => !IMGIDS[a]).length : ""));
     } catch (e) {
       say("止まりました：" + ((e && e.message) || "エラー") + "（もう一度押すと続きから取ります）");
     } finally { imgRun = null; }
@@ -2868,7 +2860,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       '<div class="row"><label><input id="tsAlert" type="checkbox"' + (TSET.alert ? " checked" : "") + "> プレ値（定価以上・粗利500円以上・中古良い以上）を赤くして震わせる</label></div>" +
       '<div class="row"><button id="tsSave" class="btn-primary" type="button">保存</button><button id="edClose" type="button">閉じる</button></div>' +
       '<div class="st" style="margin-top:12px">セットの画像</div>' +
-      '<div class="note">全部のセットのAmazonの画像を、スマホの中に保存します（家のWi-Fiで押してください）。まだ取っていないセットの分だけKeepaのトークンを1セット1トークン使います。2回目からは新しく増えたセットの分だけです。</div>' +
+      '<div class="note">全部のセットのAmazonの画像を、スマホの中に保存します（家のWi-Fiで押してください）。Keepaのトークンは使いません。もう保存した画像は飛ばすので、2回目からは新しく増えた分だけです。</div>' +
       '<div class="row"><button id="tsImg" type="button">セットの画像をまとめて取る</button><button id="tsImgStop" type="button">止める</button></div><div class="note" id="tsImgMsg"></div>';
     sheet.hidden = false;
     $("edClose").addEventListener("click", closeEditor);

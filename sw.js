@@ -1,7 +1,7 @@
 // 電波がなくても開けるように、ページ一式をスマホの中に置いておく。
 // 開いたときは置いてあるものをすぐ出し、電波があれば裏で新しいものに入れ替える（次に開いたときに新しくなる）。
-const CACHE = "set-checker-v77";
-const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "data/author.enc", "data/koheya.enc", "data/kronos.enc", "data/bocat.enc", "tour.js", "leaflet.js", "leaflet.css", "data/stores.json", "data/news.json"];
+const CACHE = "set-checker-v79";
+const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "data/author.enc", "data/koheya.enc", "data/kronos.enc", "data/bocat.enc", "tour.js", "leaflet.js", "leaflet.css", "data/stores.json", "data/news.json", "data/setimg.enc"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" })))).then(() => self.skipWaiting()));
