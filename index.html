@@ -356,7 +356,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
-    <span class="btns"><button id="dataBtn" class="btn filebtn" type="button">データを読み込む</button><input id="file" type="file" hidden><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button><button id="tourBtn" class="purchbtn" type="button">店回り</button><button id="sBulkBtn" class="purchbtn" type="button" hidden>まとめて入れる</button><button id="sAddCol" class="purchbtn" type="button" hidden>＋列を足す</button><button id="sDelCol" class="purchbtn" type="button" hidden>足した列を取り消す</button><span id="appv" style="font-size:10px;color:var(--muted);margin-left:4px">版 89</span></span>
+    <span class="btns"><button id="dataBtn" class="btn filebtn" type="button">データを読み込む</button><input id="file" type="file" hidden><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button><button id="tourBtn" class="purchbtn" type="button">店回り</button><button id="sBulkBtn" class="purchbtn" type="button" hidden>まとめて入れる</button><button id="sAddCol" class="purchbtn" type="button" hidden>＋列を足す</button><button id="sDelCol" class="purchbtn" type="button" hidden>足した列を取り消す</button><span id="appv" style="font-size:10px;color:var(--muted);margin-left:4px">版 90</span></span>
   </div>
 </div>
 
@@ -2628,14 +2628,20 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   async function onTag(tg) {
     // 値段を入れる画面が開いていれば、そこに入れる（セット本の画面でも）
     const pi = $("price");
-    if (pi && !sheet.hidden) { pi.value = String(tg.p); pi.dispatchEvent(new Event("input")); tToast("値札 " + yen(tg.p) + "円を入れました"); return; }
+    //   セット本の値段の画面なら、そのまま保存してマスに入れる（2026-11-17）
+    if (pi && !sheet.hidden) {
+      pi.value = String(tg.p); pi.dispatchEvent(new Event("input"));
+      const ef = $("edForm");
+      if (ef) { ef.requestSubmit(); tToast("値札 " + yen(tg.p) + "円をマスに入れました"); } else tToast("値札 " + yen(tg.p) + "円を入れました");
+      return;
+    }
     const code = tg.code.slice(0, 10);
     tToast("値札 " + yen(tg.p) + "円：ブックオフで本を調べています…");
     const bo = await boLookup(code);
     if (!isTView()) {
       // セット本の画面：値札の本のJANでセットを探す
       // 開いた値段の画面に、値札の値段を入れておく（保存は自分で押す）
-      const putP = () => { const pi2 = $("price"); if (pi2 && !sheet.hidden) pi2.value = String(tg.p); };
+      const putP = () => { const pi2 = $("price"), ef = $("edForm"); if (pi2 && ef && !sheet.hidden) { pi2.value = String(tg.p); ef.requestSubmit(); tToast("値札 " + yen(tg.p) + "円をマスに入れました"); } };
       if (bo && bo.jan) { tToast("値札 " + yen(tg.p) + "円"); search(bo.jan); putP(); }
       else if (bo && bo.title) {
         // JANがない本（講談社のコミックなど）：ブックオフの書名から、セットと巻を探す（2026-11-17）
