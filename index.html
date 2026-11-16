@@ -712,14 +712,14 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const lastV = (function () { for (let k = s.own.length - 1; k >= 0; k--) if (s.own[k].virt) return k; return -1; })();
     const lastVEmpty = lastV >= 0 && !s.vol.some((v, i) => entryAt(s, s.own[lastV], i + 1));
     // まとめて入れる・＋列を足す・足した列を取り消すのボタンは、上の「店回り」の横に出す（2026-11-17）
-    h += '<div class="tablebox" id="tbox"><table class="num"><thead><tr><th class="fx1">巻</th><th class="fx2" style="text-align:left">書名</th><th>最新</th><th>参考</th><th>目安' + (aimCol != null ? "<br>" + circled(aimCol) : "") + '</th>';
+    h += '<div class="tablebox" id="tbox"><table class="num"><thead><tr><th class="fx1">巻</th><th class="fx2" style="text-align:left">書名</th><th>最新</th><th>目安' + (aimCol != null ? "<br>" + circled(aimCol) : "") + '</th>';
     cols.forEach((x) => { h += '<th class="own">' + circled(x.i) + (s.own[x.i].virt ? "<br>新" : "") + "</th>"; });
     past.forEach((x, k) => { h += '<th' + (k === 0 ? ' class="own"' : "") + ">" + x.h + "</th>"; });
     h += "</tr></thead><tbody>";
     s.vol.forEach((v, i) => {
       const aim = aimOf(i);
       h += '<tr' + (i === vi ? ' class="hit" id="hitrow"' : "") + '><td class="vn">' + (i + 1) + '</td><td class="vt">' + esc(v[0] || "") + (khOf(s) && (khOf(s).kk || []).includes(i + 1) ? '<span class="kk">カカリ</span>' : "") + '<span class="j">' + esc(v[1] || "") + "</span>" + (function () { const a = auOf(s); return a && a.va && a.va[i] ? '<span class="va">' + esc(a.va[i]) + "</span>" : ""; })() + "</td>" +
-        '<td class="g">' + yen(v[2]) + '</td><td class="ref">' + yen(v[3]) + '</td><td class="aim' + (aim != null && aim < 0 ? " minus" : "") + '">' + yen(aim) + "</td>";
+        '<td class="g">' + yen(v[2]) + '</td><td class="aim' + (aim != null && aim < 0 ? " minus" : "") + '">' + yen(aim) + "</td>";
       cols.forEach((x) => {
         const o = s.own[x.i];
         if (i >= x.n) { h += '<td class="own out">―</td>'; return; }   // この列は、この巻がなかったころのセット
@@ -738,7 +738,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       h += "</tr>";
     });
     h += "</tbody></table></div>";
-    h += '<div class="legend"><span><b>最新</b>：グレーの列（Keepa）</span><span><b>参考</b>：参考価格の列</span><span><b>目安</b>：一番左のそろっていない列（見出しの丸数字）で、残りのお金（販売価格−手数料−利益1,000円−もう使ったお金）を、足りない巻に最新の値段の比で分けたもの。この値段までで買えば利益1,000円が残る（持っている巻・記入した巻は空欄）</span><span><b>①②…</b>：集めている列（なし＝まだ持っていない。押すと買った値段を記入できます。<span style=\"background:var(--bought);padding:0 4px\">緑</span>＝記入した巻、未＝まだExcelに入っていない、<span style=\"background:#fff1d6;color:#8a5a00;padding:0 4px\">仮</span>＝金額をあとで入れる本。仮の金額で計算している。<span style=\"color:var(--good)\">-20%</span>＝割引の日に買った本。値段は値札のまま、計算は割引後）</span><span><b>仕入・揃え済</b>：売れたセットと揃えたセットで買った値段（新しいほうから3つ）</span><span><b>1冊○円まで</b>：残りの巻をこの値段までで買えば、利益1,000円が残る（Excelの6行目と同じ。スマホで記入した巻も入れて計算。<span style=\"color:var(--bad)\">赤のマイナス</span>＝もう利益1,000円は取れない）</span><span><b style=\"color:var(--grey)\">1冊平均</b>：そろった列の、割引を引いた後の1冊の平均</span></div>';
+    h += '<div class="legend"><span><b>最新</b>：グレーの列（Keepa）</span><span><b>目安</b>：一番左のそろっていない列（見出しの丸数字）で、残りのお金（販売価格−手数料−利益1,000円−もう使ったお金）を、足りない巻に最新の値段の比で分けたもの。この値段までで買えば利益1,000円が残る（持っている巻・記入した巻は空欄）</span><span><b>①②…</b>：集めている列（なし＝まだ持っていない。押すと買った値段を記入できます。<span style=\"background:var(--bought);padding:0 4px\">緑</span>＝記入した巻、未＝まだExcelに入っていない、<span style=\"background:#fff1d6;color:#8a5a00;padding:0 4px\">仮</span>＝金額をあとで入れる本。仮の金額で計算している。<span style=\"color:var(--good)\">-20%</span>＝割引の日に買った本。値段は値札のまま、計算は割引後）</span><span><b>仕入・揃え済</b>：売れたセットと揃えたセットで買った値段（新しいほうから3つ）</span><span><b>1冊○円まで</b>：残りの巻をこの値段までで買えば、利益1,000円が残る（Excelの6行目と同じ。スマホで記入した巻も入れて計算。<span style=\"color:var(--bad)\">赤のマイナス</span>＝もう利益1,000円は取れない）</span><span><b style=\"color:var(--grey)\">1冊平均</b>：そろった列の、割引を引いた後の1冊の平均</span></div>';
     main.innerHTML = h;
     const back = $("back");
     if (back) back.addEventListener("click", () => showList(lastList.intro));
