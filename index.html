@@ -3567,7 +3567,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         if (!hadCtl || reloading) return;   // 初めて開いたときは開き直さない
         reloading = true;
         const go = () => {
-          const busy = (sheet && !sheet.hidden) || (typeof camStream !== "undefined" && camStream) || tBusy > 0;
+          // 値段の画面は、読んだときに自動で開くので、開いているだけでは待たない。値段の欄に打っている途中・まとめて入れるで選んでいる途中だけ待つ（2026-11-17）
+          const typing = sheet && !sheet.hidden && ((document.activeElement && sheet.contains(document.activeElement)) || (bulk && bulk.sel && bulk.sel.length));
+          const busy = typing || (typeof camStream !== "undefined" && camStream) || tBusy > 0;
           if (busy) { setTimeout(go, 2000); return; }
           location.reload();
         };
