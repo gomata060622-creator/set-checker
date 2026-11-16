@@ -743,7 +743,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     // バーコードで読んで開いたときは、その巻の行の一番左の空いているマスの値段を入れる画面を開き、キーボードも出す（2026-11-17）
     if (fromScan && !keepScroll && !(bulk && bulk.si === si) && hr) {
       const td0 = hr.querySelector("td.own.miss");
-      if (td0) openEditor(si, +td0.dataset.oi, +td0.dataset.v, true);
+      if (td0) { openEditor(si, +td0.dataset.oi, +td0.dataset.v, true); scrollToCell(td0); }
     }
   }
 
@@ -1218,6 +1218,32 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       change({ op: "set", id: data.id, data });
       closeEditor();
     });
+  }
+  // 読んだ巻の空いているマスへ飛ぶ：表の中を上下・左右に動かして、そのマスを巻・書名の列のすぐ右、下の入力画面の上に出す（2026-11-17）
+  function scrollToCell(td) {
+    const go = () => {
+      const box = $("tbox");
+      if (!box || !td.isConnected) return;
+      // 表の箱そのものを画面の上のほうへ
+      const br = box.getBoundingClientRect();
+      if (br.top < 0 || br.top > 80) window.scrollBy(0, br.top - 8);
+      // 左右：巻・書名（左に固定の2列）のすぐ右へ
+      const fx = box.querySelector("td.vt"), fxR = fx ? fx.getBoundingClientRect().right : box.getBoundingClientRect().left;
+      const r = td.getBoundingClientRect();
+      if (r.left < fxR || r.right > box.getBoundingClientRect().right) box.scrollLeft += r.left - fxR - 4;
+      // 上下：見出しのすぐ下〜入力画面の上のあいだの真ん中へ
+      const head = box.querySelector("thead"), hB = head ? head.getBoundingClientRect().bottom : box.getBoundingClientRect().top;
+      const sh = sheet.hidden ? null : sheet.getBoundingClientRect();
+      const vv = window.visualViewport, bottom = Math.min(sh ? sh.top : Infinity, vv ? vv.height : innerHeight, box.getBoundingClientRect().bottom);
+      const r2 = td.getBoundingClientRect();
+      const mid = (hB + bottom) / 2;
+      box.scrollTop += r2.top + r2.height / 2 - mid;
+      const r3 = td.getBoundingClientRect();
+      if (r3.bottom > bottom) window.scrollBy(0, r3.bottom - bottom + 8);
+      else if (r3.top < hB) window.scrollBy(0, r3.top - hB - 8);
+      if (edPos) { edPos.y = window.scrollY; edPos.l = box.scrollLeft; edPos.t = box.scrollTop; }   // 保存したあとも、このマスのあたりにもどる
+    };
+    go(); setTimeout(go, 150); setTimeout(go, 500);   // キーボードが出て画面の高さが変わったあとにもう一度
   }
   // 値段を入れているマスに印を付け、下の入力画面に隠れていれば見える所まで上げる
   function markEditing(oi, v) {
