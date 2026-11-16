@@ -356,7 +356,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
-    <span class="btns"><button id="dataBtn" class="btn filebtn" type="button">データを読み込む</button><input id="file" type="file" hidden><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button><button id="tourBtn" class="purchbtn" type="button">店回り</button><button id="sBulkBtn" class="purchbtn" type="button" hidden>まとめて入れる</button><button id="sAddCol" class="purchbtn" type="button" hidden>＋列を足す</button><button id="sDelCol" class="purchbtn" type="button" hidden>足した列を取り消す</button><span id="appv" style="font-size:10px;color:var(--muted);margin-left:4px">版 90</span></span>
+    <span class="btns"><button id="dataBtn" class="btn filebtn" type="button">データを読み込む</button><input id="file" type="file" hidden><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button><button id="tourBtn" class="purchbtn" type="button">店回り</button><button id="sBulkBtn" class="purchbtn" type="button" hidden>まとめて入れる</button><button id="sAddCol" class="purchbtn" type="button" hidden>＋列を足す</button><button id="sDelCol" class="purchbtn" type="button" hidden>足した列を取り消す</button><span id="appv" style="font-size:10px;color:var(--muted);margin-left:4px">版 91</span></span>
   </div>
 </div>
 
@@ -592,6 +592,19 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   //   まだExcelに入っていない記入（と、書き出したデータより後の記入）があれば、データを読み直しても列を出す
   function virtCol(s, k) {
     return { a: s.a || "", c: "新" + k, p: null, n: null, f7: null, f9: null, dc: null, nd: "", x: s.vol.map(() => null), virt: true };
+  }
+  // 記入したときに見ていた列の中身（「巻:値段;巻:値段…」）。空の列は「空2」（空の列の左から2番目）。スマホで足した列は ""
+  //   セットデータに書き込むとき、Excelで列が足された・消された・並びが変わっていても、この中身が合う列を探して書く（2026-11-17）
+  function colSig(s, o) {
+    if (!o || o.virt) return "";
+    const xs = (o.x || []).map((v, i) => (v == null || v === "" ? null : (i + 1) + ":" + String(v).replace(/[;,"\r\n]/g, ""))).filter(Boolean);
+    if (xs.length) return xs.join(";");
+    let k = 0;
+    for (const q of s.own) {
+      if (q.virt) continue;
+      if (!(q.x || []).some((v) => v != null && v !== "")) { k++; if (q === o) return "空" + k; }
+    }
+    return "";
   }
   function ensureVirt(s) {
     const m = String(DATA.made || "").match(/(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/);
@@ -1156,7 +1169,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         const o2 = s2.own[x.oi], v = x.v;
         if (!o2 || entryAt(s2, o2, v)) return;   // 念のため：入っているマスは上書きしない
         const vol = s2.vol[v - 1] || [];
-        const data = { id: newId(), at: new Date().toISOString(), d: today(), s: s2.s, gc: s2.col, a: s2.a || "", t: s2.t || "", oc: o2.c, oi: x.oi, v, vt: vol[0] || "", j: vol[1] || "", p, kari: false, dc: discR, done: false };
+        const data = { id: newId(), at: new Date().toISOString(), d: today(), s: s2.s, gc: s2.col, a: s2.a || "", t: s2.t || "", oc: o2.c, oi: x.oi, v, vt: vol[0] || "", j: vol[1] || "", p, kari: false, dc: discR, done: false, cx: colSig(s2, o2) };
         change({ op: "set", id: data.id, data });
       });
       tToast(sel.length + "冊に " + yen(p) + "円を入れました");
@@ -1215,7 +1228,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (ek) ek.addEventListener("click", () => {
       const data = {
         id: ent ? ent.id : newId(), at: ent ? ent.at : new Date().toISOString(), d: ent ? ent.d : today(),
-        s: s.s, gc: s.col, a: s.a || "", t: s.t || "", oc: o.c, oi: oi, v: v, vt: (vol && vol[0]) || "", j: (vol && vol[1]) || "", p: kariP, kari: true, dc: discR, done: false,
+        s: s.s, gc: s.col, a: s.a || "", t: s.t || "", oc: o.c, oi: oi, v: v, vt: (vol && vol[0]) || "", j: (vol && vol[1]) || "", p: kariP, kari: true, dc: discR, done: false, cx: ent && ent.cx != null ? ent.cx : colSig(s, o),
       };
       change({ op: "set", id: data.id, data });
       closeEditor();
@@ -1233,6 +1246,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         id: ent ? ent.id : newId(), at: ent ? ent.at : new Date().toISOString(), d: ent ? ent.d : today(),
         s: s.s, gc: s.col, a: s.a || "", t: s.t || "", oc: o.c, oi: oi, v: v, vt: (vol && vol[0]) || "", j: (vol && vol[1]) || "", p: p, kari: false, dc: ent && ent.kari ? (ent.dc || 0) : discR, done: false,
         fix: !!(ent && (ent.done || ent.fix)),   // Excelに書いたあとで直した記入（書き込むとき、前の値段を書き直す）
+        cx: ent && ent.cx != null ? ent.cx : colSig(s, o),
       };
       change({ op: "set", id: data.id, data });
       closeEditor();
@@ -1439,8 +1453,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   function exportCsv(todo, quiet) {
     const msg = $("pMsg");
     // 値段は値札の値段。割引の日は「店」を「店舗 20%」のようにして、セットデータで割引の色に塗る
-    const rows = [["日付", "シート", "セット名", "セットのASIN", "グレーの列", "書き込む列", "巻", "書名", "JAN", "値段", "店", "ID", "直し"]];
-    todo.slice().sort((a, b) => (a.at < b.at ? -1 : 1)).forEach((e) => rows.push([e.d, e.s, e.t, e.a, e.gc, e.oc, e.v, e.vt, e.j, e.p, e.dc > 0 ? "店舗 " + pctTxt(e.dc) : "店舗", e.id, e.fix ? 1 : ""]));
+    // 「列の中身」：記入したときに見ていた列の中身（セットデータが、列がずれていても同じ列を探して書く。2026-11-17）
+    const rows = [["日付", "シート", "セット名", "セットのASIN", "グレーの列", "書き込む列", "巻", "書名", "JAN", "値段", "店", "ID", "直し", "列の中身"]];
+    todo.slice().sort((a, b) => (a.at < b.at ? -1 : 1)).forEach((e) => rows.push([e.d, e.s, e.t, e.a, e.gc, e.oc, e.v, e.vt, e.j, e.p, e.dc > 0 ? "店舗 " + pctTxt(e.dc) : "店舗", e.id, e.fix ? 1 : "", e.cx == null ? "" : e.cx]));
     const csv = "﻿" + rows.map((r) => r.map(csvq).join(",")).join("\r\n") + "\r\n";
     const d = new Date();
     const fn = "スマホ仕入れ_" + d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + "_" + String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0") + ".csv";
@@ -1941,7 +1956,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (oi < 0) { for (let i = 0; i < s.own.length; i++) { const o = s.own[i]; if (o.virt && !entryAt(s, o, v)) { oi = i; break; } } }
     if (oi < 0) { s.own.push(virtCol(s, s.own.filter((o) => o.virt).length + 1)); oi = s.own.length - 1; }
     const o = s.own[oi], vol = s.vol[it.vi] || [];
-    const data = { id: newId(), at: new Date().toISOString(), d: today(), s: s.s, gc: s.col, a: s.a || "", t: s.t || "", oc: o.c, oi, v, vt: vol[0] || "", j: vol[1] || "", p, kari: false, dc: discR, done: false };
+    const data = { id: newId(), at: new Date().toISOString(), d: today(), s: s.s, gc: s.col, a: s.a || "", t: s.t || "", oc: o.c, oi, v, vt: vol[0] || "", j: vol[1] || "", p, kari: false, dc: discR, done: false, cx: colSig(s, o) };
     notePrice(p);
     change({ op: "set", id: data.id, data });
     Object.assign(it, { st: "new", p, d: today(), col: o.c });
