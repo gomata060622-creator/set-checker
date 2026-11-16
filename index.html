@@ -141,6 +141,7 @@ td.own.bought { background: var(--bought); color: var(--bought-fg); font-weight:
 td.own .mark { font-size: 9px; font-weight: 400; color: var(--miss-fg); margin-left: 2px; vertical-align: top; }
 .purchbtn { font-size: 12px; padding: 4px 10px; }
 .purchbtn b { color: var(--miss-fg); }
+.purchbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--panel); border-top: 2px solid var(--accent); box-shadow: 0 -6px 24px rgba(0,0,0,.18);
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-top: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; }
@@ -340,7 +341,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   <div id="cam" class="cam" hidden><video id="camV" playsinline muted></video><div class="camside"><div id="camMsg" class="note">カメラを開いています…</div><button type="button" id="camClose">カメラを閉じる</button></div></div>
   <div class="meta">
     <span id="dataInfo">データを読み込んでいます…</span>
-    <span class="btns"><button id="dataBtn" class="btn filebtn" type="button">データを読み込む</button><input id="file" type="file" hidden><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button><button id="tourBtn" class="purchbtn" type="button">店回り</button></span>
+    <span class="btns"><button id="dataBtn" class="btn filebtn" type="button">データを読み込む</button><input id="file" type="file" hidden><button id="discBtn" class="purchbtn" type="button" aria-label="今日の割引（押すたびに なし→10%→15%→20%）">割引なし</button><button id="purchBtn" class="purchbtn" type="button">仕入れ一覧</button><button id="tanBtn" class="purchbtn" type="button">単品</button><button id="arrBtn" class="purchbtn" type="button">到着</button><button id="shelfBtn" class="purchbtn" type="button" hidden>棚</button><button id="pickBtn" class="purchbtn" type="button" hidden>注文</button><button id="homeBtn" class="purchbtn" type="button">トップ</button><button id="newsBtn" class="purchbtn" type="button">ニュース</button><button id="tourBtn" class="purchbtn" type="button">店回り</button><button id="sBulkBtn" class="purchbtn" type="button" hidden>まとめて入れる</button><button id="sAddCol" class="purchbtn" type="button" hidden>＋列を足す</button><button id="sDelCol" class="purchbtn" type="button" hidden>足した列を取り消す</button></span>
   </div>
 </div>
 
@@ -695,7 +696,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     h += '<div class="hbar" id="hbar" hidden><span>←</span><input id="hrange" type="range" min="0" max="1000" value="0" aria-label="表を横に動かす"><span>→</span><span class="hl" id="hlab"></span></div>';
     const lastV = (function () { for (let k = s.own.length - 1; k >= 0; k--) if (s.own[k].virt) return k; return -1; })();
     const lastVEmpty = lastV >= 0 && !s.vol.some((v, i) => entryAt(s, s.own[lastV], i + 1));
-    h += '<div class="actions"><button id="bulkBtn" type="button"' + (bulk && bulk.si === si ? ' class="on"' : "") + ">" + (bulk && bulk.si === si ? "まとめて入れるをやめる" : "まとめて入れる") + '</button><button id="addCol" type="button">＋列を足す</button>' + (lastVEmpty ? '<button id="delCol" type="button">足した列を取り消す</button>' : "") + '<span class="note">' + (s.own.some((o) => o.virt) ? "「新」の列はスマホで足した列。まとめて実行で、Excelのこのブロックに新しい列ができて書き込まれます。値段を入れた列を取り消すときは、先にその値段を「消す」で消す" : "書き込む列がないとき（初めて集める・全部そろっている）に足す") + "</span></div>";
+    // まとめて入れる・＋列を足す・足した列を取り消すのボタンは、上の「店回り」の横に出す（2026-11-17）
     h += '<div class="tablebox" id="tbox"><table class="num"><thead><tr><th class="fx1">巻</th><th class="fx2" style="text-align:left">書名</th><th>最新</th><th>参考</th><th>目安' + (aimCol != null ? "<br>" + circled(aimCol) : "") + '</th>';
     cols.forEach((x) => { h += '<th class="own">' + circled(x.i) + (s.own[x.i].virt ? "<br>新" : "") + "</th>"; });
     past.forEach((x, k) => { h += '<th' + (k === 0 ? ' class="own"' : "") + ">" + x.h + "</th>"; });
@@ -731,13 +732,14 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     main.querySelectorAll("td.own.tap").forEach((td) => td.addEventListener("click", () => {
       if (bulk && bulk.si === si) bulkTap(td); else openEditor(si, +td.dataset.oi, +td.dataset.v);
     }));
-    const bb = $("bulkBtn");
-    if (bb) bb.addEventListener("click", () => { if (bulk && bulk.si === si) { bulk = null; closeEditor(); } else { closeEditor(); bulk = { si, sel: [] }; } showSet(si, vi, false, true); });
+    const bb = $("sBulkBtn"), ac = $("sAddCol"), dcb = $("sDelCol");
+    bb.hidden = false; ac.hidden = false; dcb.hidden = !lastVEmpty;
+    bb.textContent = bulk && bulk.si === si ? "まとめて入れるをやめる" : "まとめて入れる";
+    bb.classList.toggle("on", !!(bulk && bulk.si === si));
+    bb.onclick = () => { if (bulk && bulk.si === si) { bulk = null; closeEditor(); } else { closeEditor(); bulk = { si, sel: [] }; } showSet(si, vi, false, true); };
     if (bulk && bulk.si === si) bulkMark();
-    const ac = $("addCol");
-    if (ac) ac.addEventListener("click", () => { s.own.push(virtCol(s, s.own.filter((o) => o.virt).length + 1)); edPos = null; showSet(si, vi, false, true); });
-    const dcb = $("delCol");   // 足した列（まだ何も入れていない一番右の「新」の列）を取り消す
-    if (dcb) dcb.addEventListener("click", () => { s.own.splice(lastV, 1); edPos = null; showSet(si, vi, false, true); });
+    ac.onclick = () => { s.own.push(virtCol(s, s.own.filter((o) => o.virt).length + 1)); edPos = null; showSet(si, vi, false, true); };
+    dcb.onclick = () => { s.own.splice(lastV, 1); edPos = null; showSet(si, vi, false, true); };   // 足した列（まだ何も入れていない一番右の「新」の列）を取り消す
     const hr = $("hitrow");
     if (keepScroll) window.scrollTo(0, scrollY);
     else if (hr && !$("verdict")) hr.scrollIntoView({ block: "center" }); else window.scrollTo(0, 0);
@@ -3552,6 +3554,13 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   loadKronos();
   loadAuthor();
   useData(SAMPLE);
+  // セットの画面でないときは、上の「まとめて入れる」などのボタンを隠す（2026-11-17）
+  try {
+    new MutationObserver(() => {
+      if (curView && curView.type === "set") return;
+      ["sBulkBtn", "sAddCol", "sDelCol"].forEach((id) => { const b = $(id); if (b) b.hidden = true; });
+    }).observe(main, { childList: true });
+  } catch (e) {}
   showHome();
   // 新しい版が届いたら自動で入れ替えて開き直す（値段を入れている途中・カメラを使っている途中は、終わるまで待つ）
   if ("serviceWorker" in navigator) {
