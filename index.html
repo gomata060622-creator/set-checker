@@ -2634,8 +2634,25 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const bo = await boLookup(code);
     if (!isTView()) {
       // セット本の画面：値札の本のJANでセットを探す
-      if (bo && bo.jan) { tToast("値札 " + yen(tg.p) + "円"); search(bo.jan); }
-      else tToast("ブックオフの値札：" + yen(tg.p) + "円（本が分かりませんでした）");
+      // 開いた値段の画面に、値札の値段を入れておく（保存は自分で押す）
+      const putP = () => { const pi2 = $("price"); if (pi2 && !sheet.hidden) pi2.value = String(tg.p); };
+      if (bo && bo.jan) { tToast("値札 " + yen(tg.p) + "円"); search(bo.jan); putP(); }
+      else if (bo && bo.title) {
+        // JANがない本（講談社のコミックなど）：ブックオフの書名から、セットと巻を探す（2026-11-17）
+        let t = bo.title.normalize("NFKC").replace(/[(（\[［【〈<][^)）\]］】〉>]*[)）\]］】〉>]/g, " ").trim();
+        const m = t.match(/^(.*?)(\d+)\s*巻?\s*[上下]?\s*$/);
+        const vol = m ? parseInt(m[2], 10) : 0, base = (m ? m[1] : t).trim();
+        const nb = norm(base);
+        const hit = nb ? textIdx.filter((x) => x.t.includes(nb)) : [];
+        if (hit.length === 1) {
+          const ss = DATA.sets[hit[0].si];
+          tToast("値札 " + yen(tg.p) + "円：" + base + (vol ? " " + vol + "巻" : ""));
+          showSet(hit[0].si, vol > 0 && vol <= ss.vol.length ? vol - 1 : -1, true);
+          putP();
+        } else if (hit.length > 1) { tToast("値札 " + yen(tg.p) + "円：" + base + "（セットが" + hit.length + "つあります）"); search(base); }
+        else tToast("値札 " + yen(tg.p) + "円：" + bo.title.slice(0, 20) + "（集めているセットにありません）");
+      }
+      else tToast("ブックオフの値札：" + yen(tg.p) + "円（本が分かりませんでした。電波がないと調べられません）");
       return;
     }
     const r = TLIST[0];
