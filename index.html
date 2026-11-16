@@ -116,6 +116,21 @@ td.own.editing { background: #ffe14d !important; color: #1d2530 !important; outl
 .sbtns { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
 .sbtns a { font-size: 14px; font-weight: 700; padding: 8px 12px; border-radius: 8px; text-decoration: none; color: #fff !important; background: #c62828; }
 .sbtns a + a { background: #1a5fb4; }
+/* セットの画面の上（題名・写真・メルカリで見る・数字）を小さく詰める（2026-11-17） */
+section.head { padding: 6px 8px; gap: 3px; }
+section.head h1 { font-size: 14px; }
+section.head .note { font-size: 11px; }
+section.head .au.big { font-size: 12px; }
+section.head .simg { margin: 2px 0 0; gap: 4px; }
+section.head .simg img { height: 80px; }
+section.head .sbtns { margin: 2px 0; gap: 4px; }
+section.head .sbtns a { font-size: 11px; padding: 3px 8px; border-radius: 6px; }
+section.head .verdict { font-size: 13px; padding: 3px 6px; gap: 0 8px; }
+section.head .verdict .own { font-size: 11px; }
+section.head .facts { grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 1px 6px; }
+section.head .fact .k { font-size: 9px; letter-spacing: 0; }
+section.head .fact .v { font-size: 12px; }
+section.head .chips { margin-top: 2px; gap: 3px; }
 .bigimg { width: 100%; height: auto; max-height: 80vh; object-fit: contain; }
 td.vt .va { display: block; color: var(--accent); font-size: 10px; }
 .quick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
