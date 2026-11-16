@@ -305,6 +305,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
 .cbtns button.colle { border-color: #b8860b; color: #8a5a00; }
 .cbtns button.colle.on { background: #b8860b; border-color: #b8860b; color: #fff; }
 /* まとめて入れるの画面：画面の高さの4分の1まで。ボタン・文字を小さく（2026-11-17） */
+.sheet.bk .sv { font-size: 11px; }
+.sheet.bk .err { font-size: 11px; }
 .sheet.bk { max-height: 25vh; overflow-y: auto; padding-top: 4px; padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); gap: 4px; }
 .sheet.bk .st { font-size: 12px; }
 .sheet.bk .quick { grid-template-columns: repeat(8, 1fr); gap: 3px; }
@@ -740,7 +742,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     if (keepScroll) window.scrollTo(0, scrollY);
     else if (hr && !$("verdict")) hr.scrollIntoView({ block: "center" }); else window.scrollTo(0, 0);
     if (!keepScroll) refocus();
-    // バーコードで読んで開いたときは、その巻の行の一番左の空いているマスの値段を入れる画面を開き、キーボードも出す（2026-11-17）
+    // バーコードで読んで開いたときは、その巻の行の一番左の空いているマスの値段を入れる画面を開く（キーボードは出さない。2026-11-17）
     if (fromScan && !keepScroll && !(bulk && bulk.si === si) && hr) {
       const td0 = hr.querySelector("td.own.miss");
       if (td0) { openEditor(si, +td0.dataset.oi, +td0.dataset.v, true); scrollToCell(td0); }
@@ -1153,6 +1155,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       return;
     }
     const ent = entryAt(s, o, v);
+    sheet.classList.add("bk");   // 値段を入れる画面も小さく（2026-11-17）
     sheet.innerHTML =
       '<div class="st">' + esc(s.t || "（セット名なし）") + "</div>" +
       '<div class="sv num">' + circled(oi) + "の列（" + esc(o.c) + "列）　" + v + "巻" + (vol && vol[0] ? "　" + esc(vol[0]) : "") + (ent ? "　記入：" + esc(ent.d) + (ent.kari ? "（金額は仮 " + yen(ent.p) + "円）" : ent.done ? "（反映済み）" : "") : "") + (discR > 0 && !(ent && !ent.kari) ? '　<span class="dctag" style="font-size:12px">割引' + pctTxt(discR) + "</span>" : "") + "</div>" +
@@ -1167,8 +1170,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     inp.addEventListener("focus", () => { try { inp.select(); } catch (e) {} });   // 前回の値段が入っていても、打てばそのまま置き換わる
     markEditing(oi, v);
     // キーボードは自動で出さない（値段の欄を指で押したときだけ出る）。ボタンで済むことが多いため
-    // ただし、バーコードで読んで開いたとき（kb）は、値段の欄に入れる状態にしてキーボードも出す（2026-11-17）
-    if (kb) { try { inp.focus(); inp.select(); } catch (e) {} }
+    // バーコードで読んで開いたとき（kb）もキーボードは出さない。検索欄に残しておくので、次のバーコードもそのまま読める（2026-11-17）
     // 値段のボタン：押すとその値段で保存。長押し（0.6秒）でそのボタンを消すか聞く
     sheet.querySelectorAll("[data-qp]").forEach((b) => {
       let tm = null, longed = false;
