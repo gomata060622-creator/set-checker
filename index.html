@@ -924,11 +924,20 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
   const localOnly = new Map();
   try { (JSON.parse(localStorage.getItem("sc_local") || "[]") || []).forEach((e) => localOnly.set(e.id, e)); } catch (e) {}
   const saveLocal = () => { try { localStorage.setItem("sc_local", JSON.stringify([...localOnly.values()])); } catch (e) {} };
+  // 2026/11/23：この端末で反映済みにした記入のid。保存場所に「反映済み」が届くまで覚えておき、
+  //   保存場所が未反映のままでも画面では反映済みにする（開き直したときに未反映に戻らないように）
+  const doneIds = new Set();
+  try { (JSON.parse(localStorage.getItem("sc_doneIds") || "[]") || []).forEach((id) => doneIds.add(id)); } catch (e) {}
+  const saveDoneIds = () => { try { localStorage.setItem("sc_doneIds", JSON.stringify([...doneIds])); } catch (e) {} };
+  function doneFix(m) {
+    doneIds.forEach((id) => { const e = m.get(id); if (e && !e.done) m.set(id, Object.assign({}, e, { done: true })); });
+  }
 
   function allEntries() {
     const m = new Map(server);
     localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
     pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
+    doneFix(m);
     return [...m.values()].filter((e) => e && e.id && !e.kind);
   }
   // 単品の仕入れ（セットの記入と同じ保存場所に、kind:"t" を付けて入れる）
@@ -936,6 +945,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const m = new Map(server);
     localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
     pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
+    doneFix(m);
     return [...m.values()].filter((e) => e && e.id && e.kind === "t");
   }
   // 単品のお気に入り（仕入れないけど、セールの日などにまた見たい本。kind:"f"）
@@ -944,12 +954,14 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const m = new Map(server);
     localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
     pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
+    doneFix(m);
     return [...m.values()].filter((e) => e && e.id && e.kind === "a");
   }
   function allF() {
     const m = new Map(server);
     localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
     pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
+    doneFix(m);
     return [...m.values()].filter((e) => e && e.id && e.kind === "f");
   }
   let undoAsk = false;   // 「未反映に戻す」は2回押したときだけ戻す
@@ -1012,11 +1024,11 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
         let okN = 0;
         for (const o of ops) {
           try { await api(body([o])); sent([o]); okN++; }
-          catch (x) { o.fail = (o.fail || 0) + 1; syncErr = String((x && x.message) || x); if (o.fail >= 3) { pending = pending.filter((p) => p !== o); badOps.push(o); } }
+          catch (x) { o.fail = (o.fail || 0) + 1; syncErr = String((x && x.message) || x); if (o.fail >= 3 && !(o.data && o.data.done)) { pending = pending.filter((p) => p !== o); badOps.push(o); } }
         }
         if (okN) { syncOk = true; syncAt = new Date(); }
       } else if (navigator.onLine && ops.length === 1) {
-        const o = ops[0]; o.fail = (o.fail || 0) + 1; if (o.fail >= 3) { pending = pending.filter((p) => p !== o); badOps.push(o); }
+        const o = ops[0]; o.fail = (o.fail || 0) + 1; if (o.fail >= 3 && !(o.data && o.data.done)) { pending = pending.filter((p) => p !== o); badOps.push(o); }
       }
     }
     savePending();
@@ -1029,6 +1041,8 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     entCache = null;
     if (op.op === "set") localOnly.set(op.id, op.data); else localOnly.delete(op.id);
     saveLocal();
+    if (op.op === "set" && op.data && op.data.done) doneIds.add(op.id); else doneIds.delete(op.id);
+    saveDoneIds();
     if (API) queueOp(Object.assign({ c: "purchases" }, op));   // 先に送る順番に入れる（消したものが画面に残らないように）
     updatePurchBtn();
     rerender();
@@ -1508,6 +1522,15 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       server.forEach((_, id) => { if (!pending.some((op) => op.id === id)) localOnly.delete(id); });
       localOnly.forEach((_, id) => { if (!pending.some((op) => op.id === id) && !server.has(id)) localOnly.delete(id); });
       saveLocal();
+      // 反映済みが保存場所に届いていなければ送り直す。届いたもの・消されたものは控えから外す
+      let reSend = false;
+      [...doneIds].forEach((id) => {
+        const sv = server.get(id);
+        if (!sv || sv.done) { if (!pending.some((op) => op.id === id)) doneIds.delete(id); return; }
+        if (!pending.some((op) => op.id === id)) { pending.push({ c: "purchases", op: "set", id, data: Object.assign({}, sv, { done: true }) }); reSend = true; }
+      });
+      saveDoneIds();
+      if (reSend) { savePending(); setTimeout(flush, 0); }
       entCache = null;
       updatePurchBtn();
       if (sheet.hidden) {
@@ -3149,6 +3172,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     const m = new Map(server);
     localOnly.forEach((e, id) => { if (!m.has(id)) m.set(id, e); });
     pending.forEach((op) => { if ((op.c || "purchases") !== "purchases") return; if (op.op === "set") m.set(op.id, op.data); else m.delete(op.id); });
+    doneFix(m);
     return [...m.values()].filter((e) => e && e.id && e.kind === k);
   }
   function shelfList() {
