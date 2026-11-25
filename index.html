@@ -1003,9 +1003,29 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
     flush();
   }
   let flushing = false;
+  // 送り直す前に保存場所を読み、もう反映済みになっている記入を「未反映」で上書きしないよう、送る順番から外す
+  //   （わざと「未反映に戻す」を押したもの＝undo の付いたものは外さない）
+  async function dropStale() {
+    try {
+      const j = await api({ a: "pull" });
+      const sv = new Map();
+      (j.purchases || []).forEach((x) => { if (x && x.id) sv.set(x.id, x); });
+      const stale = pending.filter((o) => (o.c || "purchases") === "purchases" && o.op === "set" && !o.undo && o.data && !o.data.done && sv.has(o.id) && sv.get(o.id).done);
+      if (stale.length) {
+        pending = pending.filter((o) => !stale.includes(o));
+        stale.forEach((o) => { server.set(o.id, sv.get(o.id)); localOnly.delete(o.id); doneIds.add(o.id); });
+        savePending(); saveLocal(); saveDoneIds();
+      }
+    } catch (e) {}
+  }
   async function flush() {
     if (!API || !pending.length || flushing) return;
     flushing = true;
+    // 2026/11/25：前に送ろうとして返事が来なかった記入は、保存場所にはもう入っていることがある。
+    //   その間にほかの端末が「反映済み」にしていたら、未反映のまま送り直すと反映済みを消してしまうので、先に確かめる
+    if (pending.some((o) => o.tried)) await dropStale();
+    pending.forEach((o) => { o.tried = true; });
+    savePending();
     const ops = pending.slice();
     const sent = (list) => {
       pending = pending.filter((p) => !list.includes(p));
@@ -1022,7 +1042,9 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       syncOk = false; syncErr = String((e && e.message) || e);
       if (navigator.onLine && ops.length > 1) {
         let okN = 0;
+        await dropStale();
         for (const o of ops) {
+          if (!pending.includes(o)) continue;
           try { await api(body([o])); sent([o]); okN++; }
           catch (x) { o.fail = (o.fail || 0) + 1; syncErr = String((x && x.message) || x); if (o.fail >= 3 && !(o.data && o.data.done)) { pending = pending.filter((p) => p !== o); badOps.push(o); } }
         }
@@ -1420,7 +1442,7 @@ h2.sec { font-size: 15px; margin: 6px 0 0; }
       if (!undoAsk) { undoAsk = true; showPurch(true); return; }
       undoAsk = false;
       let ids = []; try { ids = JSON.parse(localStorage.getItem("sc_lastSaved") || "[]"); } catch (e) {}
-      allEntries().concat(allT(), allA()).filter((e) => ids.includes(e.id) && e.done).forEach((e) => change({ op: "set", id: e.id, data: Object.assign({}, e, { done: false }) }));
+      allEntries().concat(allT(), allA()).filter((e) => ids.includes(e.id) && e.done).forEach((e) => change({ op: "set", id: e.id, undo: true, data: Object.assign({}, e, { done: false }) }));
       try { localStorage.setItem("sc_lastSaved", "[]"); } catch (e) {}
       showPurch(true);
     });
